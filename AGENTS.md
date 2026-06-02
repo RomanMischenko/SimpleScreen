@@ -31,6 +31,7 @@
 - **`CropWindow.isReleasedWhenClosed = false`**: required. `StatusBarController` keeps a strong reference in `cropWindow` and nils it after `cropCompletion`. With the default `true`, `close()` releases the window, then the later `cropWindow = nil` over-releases and crashes in `objc_release`.
 - **UserDefaults keys** are `ss_`-prefixed (e.g. `ss_postCaptureAction`, `ss_saveLocationPath`).
 - **TCC string**: `Info.plist` declares `NSScreenCaptureUsageDescription`. Required — without it the app cannot obtain Screen Recording permission and capture silently fails.
+- **Notification identifiers are unique by design (NOT a bug)**: every `UNNotificationRequest` in `NotificationManager` uses a per-call `UUID` (`ss.capture.<uuid>`, `ss.capture.fallback.<uuid>`, `ss.capture.save-failed.<uuid>`, `ss.area.too-small.<uuid>`). This is intentional — reusing a single fixed identifier would make each new banner **replace** the previous one. Repeated events (save failures, Desktop fallbacks, too-small selections, successive captures) must stack as separate Notification Center entries, not silently overwrite each other. Do not "fix" this by collapsing to one shared id. The hotkey-conflict banner is the deliberate exception: it uses the fixed id `ss.hotkey.conflict` because only the latest conflict state matters.
 
 ## Frameworks
 
