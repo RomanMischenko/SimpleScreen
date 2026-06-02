@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyManager = HotKeyManager()
         hotKeyManager.setup()
         notificationManager = NotificationManager()
+        settings.onLaunchAtLoginRegistrationFailed = { [weak self] attemptedValue, error in
+            self?.notificationManager.postLaunchAtLoginFailedNotification(enabling: attemptedValue, error: error)
+        }
         captureEngine = CaptureEngine(settings: settings, notificationManager: notificationManager)
         statusBarController = StatusBarController(
             settings: settings,

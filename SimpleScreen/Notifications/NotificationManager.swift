@@ -111,6 +111,21 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         post(request)
     }
 
+    func postLaunchAtLoginFailedNotification(enabling: Bool, error: Error) {
+        let content = UNMutableNotificationContent()
+        content.title = "Launch at Login Failed"
+        let action = enabling ? "enable" : "disable"
+        content.body = "Could not \(action) Launch at Login: \(error.localizedDescription). The setting was reverted."
+        content.categoryIdentifier = "ss.launch-at-login.failed"
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "ss.launch-at-login.failed.\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        post(request)
+    }
+
     func postCopiedNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Screenshot Copied"
