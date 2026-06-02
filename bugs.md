@@ -63,10 +63,12 @@
 
 **Status:** исправлено в b715683 — `Timer.scheduledTimer` удалён, состояние «ждём грант» переведено на `Bool awaitingScreenCapturePermission`, а перепроверка разрешения теперь событийная: `applicationDidBecomeActive` + новый `NSMenuDelegate.menuWillOpen` в `StatusBarController` (для accessory-приложения клик по статус-бару не даёт `didBecomeActive`).
 
-### [ ] 6. Модальные `NSAlert.runModal()` блокируют главный поток в фоновом приложении
+### [x] 6. Модальные `NSAlert.runModal()` блокируют главный поток в фоновом приложении
 **Файлы:** `Capture/CaptureEngine.swift:127-129, 135-138`, `Capture/AreaSelectionWindow.swift:159-164`
 
 Приложение dock-hidden (`LSUIElement`). При ошибке сохранения на диск показывается `runModal()` — модальный алерт в фоновом приложении может оказаться без видимого фокуса/без активации, а пока он висит, главный поток заблокирован. Если за это время прилетают новые скриншоты по хоткеям, их `Task` копятся в очереди MainActor. При длительной недоступности папки сохранения (сетевой диск, размонтированный том) приложение фактически перестаёт реагировать.
+
+**Status:** исправлено в 5b17aa5 — все три `NSAlert.runModal()` (fallback-сохранение на Desktop, полный провал сохранения, слишком маленькое выделение) заменены на неблокирующие баннеры `UNUserNotificationCenter` через новые методы `NotificationManager.postSavedToDesktopFallbackNotification` / `postSaveFailedNotification` / `postSelectionTooSmallNotification` с уникальными UUID-identifier'ами, чтобы повторные инциденты накапливались отдельными записями. В `CropWindow` добавлен closure `onSelectionTooSmall`, который `StatusBarController` связывает с `NotificationManager`. Main thread больше не блокируется при недоступной папке сохранения.
 
 ### [ ] 7. Коллизия имён файлов в пределах одной секунды → тихая перезапись
 **Файл:** `Capture/CaptureEngine.swift:96-98, 150`
