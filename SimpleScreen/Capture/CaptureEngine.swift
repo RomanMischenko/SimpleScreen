@@ -96,7 +96,7 @@ struct Capture {
             log.error("createDirectory FAILED: \(error.localizedDescription, privacy: .public)")
         }
 
-        let fileURL = saveDir.appendingPathComponent(filename)
+        let fileURL = nonCollidingURL(for: saveDir.appendingPathComponent(filename))
         do {
             try writePNG(capture.image, to: fileURL)
             log.info("write OK: \(fileURL.path, privacy: .public)")
@@ -105,9 +105,9 @@ struct Capture {
             log.error("primary write FAILED (\(fileURL.path, privacy: .public)): \(error.localizedDescription, privacy: .public)")
         }
 
-        let desktopURL = FileManager.default.homeDirectoryForCurrentUser
+        let desktopURL = nonCollidingURL(for: FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Desktop")
-            .appendingPathComponent(filename)
+            .appendingPathComponent(filename))
         do {
             try writePNG(capture.image, to: desktopURL)
             log.info("desktop write OK: \(desktopURL.path, privacy: .public)")
@@ -119,6 +119,20 @@ struct Capture {
 
         notificationManager.postSaveFailedNotification(primaryPath: fileURL.path)
         return nil
+    }
+
+    private func nonCollidingURL(for base: URL) -> URL {
+        guard FileManager.default.fileExists(atPath: base.path) else { return base }
+        let directory = base.deletingLastPathComponent()
+        let ext = base.pathExtension
+        let stem = base.deletingPathExtension().lastPathComponent
+        var n = 2
+        while true {
+            let candidateName = ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)"
+            let candidate = directory.appendingPathComponent(candidateName)
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            n += 1
+        }
     }
 
     private func writePNG(_ image: CGImage, to url: URL) throws {
