@@ -164,9 +164,16 @@ struct PreferencesView: View {
                 cancelRecording()
                 return nil
             }
+            let carbonMods = carbonModifiers(from: event.modifierFlags)
+            // Require at least one modifier and a non-modifier key — reject bare
+            // letters (would hijack the key globally) and modifier-only presses.
+            guard carbonMods != 0, !isModifierKeyCode(event.keyCode) else {
+                NSSound.beep()
+                return nil
+            }
             let newShortcut = KeyboardShortcut(
                 keyCode: UInt32(event.keyCode),
-                modifierFlags: carbonModifiers(from: event.modifierFlags)
+                modifierFlags: carbonMods
             )
             attemptRegister(shortcut: newShortcut, for: mode, rec: recCapture)
             return nil
@@ -218,6 +225,12 @@ struct PreferencesView: View {
             NSEvent.removeMonitor(m)
             rec.eventMonitor = nil
         }
+    }
+
+    // Left/right modifier key codes (Command, Shift, CapsLock, Option, Control,
+    // Function): 0x36...0x3F. A pure modifier press must not become a shortcut.
+    private func isModifierKeyCode(_ keyCode: UInt16) -> Bool {
+        (0x36...0x3F).contains(keyCode)
     }
 
     private func carbonModifiers(from nsFlags: NSEvent.ModifierFlags) -> UInt32 {
