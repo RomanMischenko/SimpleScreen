@@ -120,10 +120,12 @@
 
 **Status:** исправлено в 34328b0 — добавлен `CaptureEngine.backingScaleFactor(for:)`, который ищет `NSScreen` по `CGDirectDisplayID` через `deviceDescription[NSScreenNumber]`; оба места (`captureDisplayImage` и `StatusBarController.showAreaSelectionWindow`) теперь берут scale у того же дисплея, что захватывается (`CGMainDisplayID()`).
 
-### [ ] 14. Слишком маленькое выделение → алерт + потерянный кадр без возможности отмены
+### [WONTFIX] 14. Слишком маленькое выделение → алерт + потерянный кадр без возможности отмены
 **Файл:** `Capture/AreaSelectionWindow.swift:148-166`
 
 Любое выделение <10×10 точек (включая обычный клик без перетаскивания) трактуется как «слишком маленькое», показывает модальный алерт, и единственный способ «отменить» окно. Учитывая п.3 (Escape не работает), это de facto единственный путь отмены — но через назойливый алерт.
+
+**Status:** by design — минимум выделения 10×10 точек защищает от случайного клика без перетаскивания, который иначе сохранил бы мусорный 1×1 кадр. Зависимости от #3 (Escape не работает) и #6 (модальный алерт блокирует main thread) сняты: Escape корректно отменяет выделение в `CropWindow` (фикс 096449a, `Capture/AreaSelectionWindow.swift:162-169`), а «too small» шлёт неблокирующий баннер через `NotificationManager.postSelectionTooSmallNotification` (фикс 5b17aa5), а не модальный `runModal()`.
 
 ---
 
