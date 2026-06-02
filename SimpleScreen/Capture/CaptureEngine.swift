@@ -159,7 +159,7 @@ struct Capture {
 
     private func copyToClipboard(_ image: CGImage) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([NSImage(cgImage: image, size: .zero)])
+        NSPasteboard.general.writeObjects([NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))])
         log.info("clipboard write OK: \(image.width)x\(image.height)")
     }
 }
