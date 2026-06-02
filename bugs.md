@@ -113,10 +113,12 @@
 
 Логика: `unregister(id:)` → пробуем `register(новый)` → при конфликте восстанавливаем `oldShortcut`. Но если `oldShortcut == nil`, восстановления не происходит — пользователь остаётся вообще без хоткея на эту функцию, причём в `settings` тоже `nil`, при этом флаг `*Conflict = true` подсвечен. Меню работает, но горячая клавиша утрачена до новой ручной перенастройки.
 
-### [ ] 13. `backingScaleFactor` берётся у `NSScreen.main`, а захват идёт у `CGMainDisplayID`
+### [x] 13. `backingScaleFactor` берётся у `NSScreen.main`, а захват идёт у `CGMainDisplayID`
 **Файл:** `Capture/CaptureEngine.swift:31, 35-37`, `Menu/StatusBarController.swift:111`
 
 `NSScreen.main` — экран с активным окном приложения, а не «главный» (там, где меню-бар). В фоновом приложении без окон `NSScreen.main` обычно совпадает с экраном меню-бара, но при подключении внешнего монитора, режимах зеркалирования, mid-session reshuffle экранов — `backingScaleFactor` может относиться к другому дисплею. Результат: захват в неверном разрешении или crop с неправильным масштабом. Эта же проблема дублируется в `StatusBarController.showAreaSelectionWindow` (`:111`) при пересчёте rect в пиксели.
+
+**Status:** исправлено в 34328b0 — добавлен `CaptureEngine.backingScaleFactor(for:)`, который ищет `NSScreen` по `CGDirectDisplayID` через `deviceDescription[NSScreenNumber]`; оба места (`captureDisplayImage` и `StatusBarController.showAreaSelectionWindow`) теперь берут scale у того же дисплея, что захватывается (`CGMainDisplayID()`).
 
 ### [ ] 14. Слишком маленькое выделение → алерт + потерянный кадр без возможности отмены
 **Файл:** `Capture/AreaSelectionWindow.swift:148-166`
