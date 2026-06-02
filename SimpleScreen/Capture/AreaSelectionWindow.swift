@@ -23,7 +23,7 @@ final class CropWindow: NSWindow {
         cwLog("init — screen.frame=\(screen.frame) image=\(image.width)x\(image.height)")
         super.init(
             contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -46,6 +46,9 @@ final class CropWindow: NSWindow {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not implemented")
     }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 
     deinit {
         cwLog("deinit")

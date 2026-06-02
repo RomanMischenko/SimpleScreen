@@ -128,6 +128,7 @@ final class StatusBarController {
                 guard let cropped = CaptureEngine.cropImage(fullImage, to: pixelRect) else { return }
                 self.captureEngine.handleAreaCapture(cropped)
             }
+            NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
     }
