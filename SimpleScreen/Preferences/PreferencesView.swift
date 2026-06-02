@@ -185,31 +185,51 @@ struct PreferencesView: View {
         let callback = mode == .fullScreen ? fullScreenCallback : areaSelectCallback
         let oldShortcut = mode == .fullScreen ? settings.fullScreenShortcut : settings.areaSelectShortcut
 
-        hotKeyManager.unregister(id: id)
+        // Re-recording the exact combo that's already live: it's still registered,
+        // nothing to swap. Re-registering would self-conflict via eventHotKeyExistsErr.
+        if let old = oldShortcut, old.keyCode == shortcut.keyCode, old.modifierFlags == shortcut.modifierFlags {
+            finishSuccess(for: mode, shortcut: shortcut, rec: rec)
+            return
+        }
 
+        // Probe the new combo under a throwaway id WITHOUT tearing down the live
+        // hotkey. On conflict the existing registration (or lack of one) is left
+        // exactly as-is — a failed attempt can no longer lose a working hotkey.
+        let probeID: UInt32 = id + 1000
         do {
-            try hotKeyManager.register(shortcut: shortcut, id: id, callback: callback)
-            switch mode {
-            case .fullScreen:
-                settings.fullScreenShortcut = shortcut
-                rec.isRecordingFullScreen = false
-                rec.fullScreenConflict = false
-            case .areaSelect:
-                settings.areaSelectShortcut = shortcut
-                rec.isRecordingAreaSelect = false
-                rec.areaSelectConflict = false
-            }
-            onResolveConflict(mode)
-            removeMonitor(rec: rec)
+            try hotKeyManager.register(shortcut: shortcut, id: probeID, callback: {})
         } catch HotKeyError.conflict {
-            if let old = oldShortcut {
-                try? hotKeyManager.register(shortcut: old, id: id, callback: callback)
-            }
             switch mode {
             case .fullScreen: rec.fullScreenConflict = true
             case .areaSelect: rec.areaSelectConflict = true
             }
-        } catch {}
+            return
+        } catch {
+            return
+        }
+
+        // Probe succeeded → combo is free. Drop the probe, then atomically swap
+        // the live hotkey to it (real-id registration is guaranteed to succeed).
+        hotKeyManager.unregister(id: probeID)
+        hotKeyManager.unregister(id: id)
+        try? hotKeyManager.register(shortcut: shortcut, id: id, callback: callback)
+
+        finishSuccess(for: mode, shortcut: shortcut, rec: rec)
+    }
+
+    private func finishSuccess(for mode: CaptureMode, shortcut: KeyboardShortcut, rec: ShortcutRecordingState) {
+        switch mode {
+        case .fullScreen:
+            settings.fullScreenShortcut = shortcut
+            rec.isRecordingFullScreen = false
+            rec.fullScreenConflict = false
+        case .areaSelect:
+            settings.areaSelectShortcut = shortcut
+            rec.isRecordingAreaSelect = false
+            rec.areaSelectConflict = false
+        }
+        onResolveConflict(mode)
+        removeMonitor(rec: rec)
     }
 
     private func cancelRecording() {
