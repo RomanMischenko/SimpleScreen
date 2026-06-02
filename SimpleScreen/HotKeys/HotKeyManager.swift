@@ -1,5 +1,8 @@
 import Carbon
 import Foundation
+import os
+
+private let log = Logger(subsystem: "com.simplescreenapp.SimpleScreen", category: "hotkeys")
 
 enum HotKeyError: Error {
     case conflict
@@ -13,7 +16,7 @@ final class HotKeyManager {
 
     func setup() {
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(
+        let status = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, event, userData -> OSStatus in
                 guard let userData else { return OSStatus(eventNotHandledErr) }
@@ -28,6 +31,9 @@ final class HotKeyManager {
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandlerRef
         )
+        if status != noErr {
+            log.error("InstallEventHandler failed: OSStatus=\(status)")
+        }
     }
 
     func register(shortcut: KeyboardShortcut, id: UInt32, callback: @escaping () -> Void) throws {

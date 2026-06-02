@@ -40,7 +40,7 @@ Carbon, ScreenCaptureKit, ServiceManagement, UserNotifications. No third-party d
 
 ## Runtime Debug Log
 
-Logging via `os.Logger`, subsystem `com.simplescreenapp.SimpleScreen`. Categories: `capture` (`CaptureEngine`) and `areaSelect` (`AreaSelectionWindow`).
+Logging via `os.Logger`, subsystem `com.simplescreenapp.SimpleScreen`. Categories: `capture` (`CaptureEngine`), `areaSelect` (`AreaSelectionWindow`), `hotkeys` (`HotKeyManager`), `launchAtLogin` (`AppSettings`).
 
 - `.debug` — diagnostics (not persisted by default): `saveDir`, `imageSize`, window `init`/`deinit`, `mouseDown`/`mouseUp`, `rep bitsPerPixel`, `png data size`.
 - `.info` — successful captures and notable user events: `write OK`, `desktop write OK`, `clipboard write OK`, `selection too small`.
