@@ -81,6 +81,7 @@ struct Capture {
 
     private func saveImageToDisk(_ capture: Capture) -> String? {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let filename = "Screenshot \(formatter.string(from: capture.timestamp)).png"
 
