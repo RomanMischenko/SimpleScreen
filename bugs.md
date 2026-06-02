@@ -36,12 +36,14 @@
 
 **Status:** исправлено в 2a3a9dd — `AppDelegate` больше не глотает `HotKeyError.conflict`: при `eventHotKeyExistsErr` `NotificationManager.postHotkeyConflictNotification` шлёт баннер с фиксированным identifier `ss.hotkey.conflict`, `StatusBarController` помечает пункт меню суффиксом `(in use by system)` и сбрасывает `keyEquivalent`, `PreferencesView` сразу показывает красную плашку через initial-conflict, а `onResolveConflict` гасит индикатор после успешной перенастройки. «Лучший случай» (коэкзистенция с системным шорткатом, двойной скриншот) — by design: Carbon регистрирует хоткей успешно, наш скриншот работает.
 
-### [ ] 3. Escape в окне выбора области может не работать
+### [x] 3. Escape в окне выбора области может не работать
 **Файл:** `Capture/AreaSelectionWindow.swift:24-29` (создание окна), `:173-180` (обработчик keyDown)
 
 `CropWindow` создаётся как `NSWindow` со `styleMask: [.borderless, .nonactivatingPanel]`. Флаг `.nonactivatingPanel` валиден только для `NSPanel` — здесь он игнорируется. Borderless `NSWindow` по умолчанию возвращает `canBecomeKey == false`, то есть `makeKeyAndOrderFront` не делает окно key-window, и `keyDown` (включая обработку Escape на строке 174) не вызывается. Отмена выделения работает только через крошечное движение мыши (<10px) — что само показывает алерт "Selection Too Small" (см. #14).
 
 Косвенное подтверждение: пользователь не может корректно отменить выбор области без захвата мусорного маленького кадра.
+
+**Status:** исправлено в 096449a — в `CropWindow` убран мисслидинг-флаг `.nonactivatingPanel` (он игнорируется на `NSWindow`), добавлены overrides `canBecomeKey`/`canBecomeMain → true`, и в `StatusBarController.showAreaSelectionWindow` перед `makeKeyAndOrderFront` вызывается `NSApp.activate(ignoringOtherApps: true)`, чтобы LSUIElement-приложение получило фокус клавиатуры. Теперь Escape корректно отменяет выделение без алерта.
 
 ### [ ] 4. Лог `/tmp/simplescreenlog.txt` растёт бесконечно
 **Файл:** `Capture/CaptureEngine.swift:79-93`, `Capture/AreaSelectionWindow.swift:4-16`
