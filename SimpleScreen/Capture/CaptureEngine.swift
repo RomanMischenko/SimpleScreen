@@ -1,7 +1,10 @@
 import AppKit
 import CoreGraphics
+import os
 import ScreenCaptureKit
 import UniformTypeIdentifiers
+
+private let log = Logger(subsystem: "com.simplescreenapp.SimpleScreen", category: "capture")
 
 struct Capture {
     let mode: CaptureMode
@@ -76,45 +79,30 @@ struct Capture {
         }
     }
 
-    private func log(_ message: String) {
-        let logURL = URL(fileURLWithPath: "/tmp/simplescreenlog.txt")
-        let line = "\(Date()): \(message)\n"
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logURL.path) {
-                if let handle = try? FileHandle(forWritingTo: logURL) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    try? handle.close()
-                }
-            } else {
-                try? data.write(to: logURL)
-            }
-        }
-    }
-
     private func saveImageToDisk(_ capture: Capture) -> String? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let filename = "Screenshot \(formatter.string(from: capture.timestamp)).png"
 
         let saveDir = settings.saveLocationURL
-        log("saveDir = \(saveDir.path)")
-        log("imageSize = \(capture.image.width)x\(capture.image.height), colorSpace = \(capture.image.colorSpace?.name ?? "nil" as CFString)")
+        let colorSpaceName = (capture.image.colorSpace?.name).map { $0 as String } ?? "nil"
+        log.debug("saveDir = \(saveDir.path, privacy: .public)")
+        log.debug("imageSize = \(capture.image.width)x\(capture.image.height), colorSpace = \(colorSpaceName, privacy: .public)")
 
         do {
             try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
-            log("createDirectory OK")
+            log.debug("createDirectory OK")
         } catch {
-            log("createDirectory FAILED: \(error)")
+            log.error("createDirectory FAILED: \(error.localizedDescription, privacy: .public)")
         }
 
         let fileURL = saveDir.appendingPathComponent(filename)
         do {
             try writePNG(capture.image, to: fileURL)
-            log("write OK: \(fileURL.path)")
+            log.info("write OK: \(fileURL.path, privacy: .public)")
             return fileURL.path
         } catch {
-            log("primary write FAILED (\(fileURL.path)): \(error)")
+            log.error("primary write FAILED (\(fileURL.path, privacy: .public)): \(error.localizedDescription, privacy: .public)")
         }
 
         let desktopURL = FileManager.default.homeDirectoryForCurrentUser
@@ -122,36 +110,37 @@ struct Capture {
             .appendingPathComponent(filename)
         do {
             try writePNG(capture.image, to: desktopURL)
-            log("desktop write OK: \(desktopURL.path)")
+            log.info("desktop write OK: \(desktopURL.path, privacy: .public)")
             let alert = NSAlert()
             alert.messageText = "Screenshot Saved to Desktop"
             alert.informativeText = "The configured save folder was unavailable. The screenshot was saved to your Desktop instead."
             alert.runModal()
             return desktopURL.path
         } catch {
-            log("desktop write FAILED (\(desktopURL.path)): \(error)")
+            log.error("desktop write FAILED (\(desktopURL.path, privacy: .public)): \(error.localizedDescription, privacy: .public)")
         }
 
         let alert = NSAlert()
         alert.messageText = "Screenshot Save Failed"
-        alert.informativeText = "Could not save to \(fileURL.path) or Desktop. Check /tmp/simplescreenlog.txt for details."
+        alert.informativeText = "Could not save to \(fileURL.path) or Desktop. Check Console.app (subsystem com.simplescreenapp.SimpleScreen) for details."
         alert.runModal()
         return nil
     }
 
     private func writePNG(_ image: CGImage, to url: URL) throws {
         let rep = NSBitmapImageRep(cgImage: image)
-        log("rep bitsPerPixel=\(rep.bitsPerPixel) bitmapFormat=\(rep.bitmapFormat.rawValue) hasAlpha=\(rep.hasAlpha)")
+        log.debug("rep bitsPerPixel=\(rep.bitsPerPixel) bitmapFormat=\(rep.bitmapFormat.rawValue) hasAlpha=\(rep.hasAlpha)")
         guard let data = rep.representation(using: .png, properties: [:]) else {
-            log("rep.representation returned nil")
+            log.error("rep.representation returned nil")
             throw CocoaError(.fileWriteUnknown)
         }
-        log("png data size=\(data.count)")
+        log.debug("png data size=\(data.count)")
         try data.write(to: url, options: .atomic)
     }
 
     private func copyToClipboard(_ image: CGImage) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([NSImage(cgImage: image, size: .zero)])
+        log.info("clipboard write OK: \(image.width)x\(image.height)")
     }
 }

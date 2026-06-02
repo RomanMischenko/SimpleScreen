@@ -38,7 +38,13 @@ Carbon, ScreenCaptureKit, ServiceManagement, UserNotifications. No third-party d
 
 ## Runtime Debug Log
 
-`CaptureEngine` and `AreaSelectionWindow` write to `/tmp/simplescreenlog.txt`. Not conditional — always on.
+Logging via `os.Logger`, subsystem `com.simplescreenapp.SimpleScreen`. Categories: `capture` (`CaptureEngine`) and `areaSelect` (`AreaSelectionWindow`).
+
+- `.debug` — diagnostics (not persisted by default): `saveDir`, `imageSize`, window `init`/`deinit`, `mouseDown`/`mouseUp`, `rep bitsPerPixel`, `png data size`.
+- `.info` — successful captures and notable user events: `write OK`, `desktop write OK`, `clipboard write OK`, `selection too small`.
+- `.error` — failures: `createDirectory FAILED`, primary/desktop `write FAILED`, `rep.representation returned nil`.
+
+View via `Console.app` (filter by Subsystem) or terminal: `log show --predicate 'subsystem == "com.simplescreenapp.SimpleScreen"' --debug --last 1h`. The old `/tmp/simplescreenlog.txt` file is no longer used; rotation is handled by macOS unified logging.
 
 ## Distribution
 

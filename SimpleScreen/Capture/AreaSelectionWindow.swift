@@ -1,26 +1,15 @@
 import AppKit
 import Carbon
+import os
 
-private func cwLog(_ message: String) {
-    let logURL = URL(fileURLWithPath: "/tmp/simplescreenlog.txt")
-    let line = "\(Date()): [CropWindow] \(message)\n"
-    guard let data = line.data(using: .utf8) else { return }
-    if FileManager.default.fileExists(atPath: logURL.path),
-       let handle = try? FileHandle(forWritingTo: logURL) {
-        handle.seekToEndOfFile()
-        handle.write(data)
-        try? handle.close()
-    } else {
-        try? data.write(to: logURL)
-    }
-}
+private let log = Logger(subsystem: "com.simplescreenapp.SimpleScreen", category: "areaSelect")
 
 final class CropWindow: NSWindow {
     var cropCompletion: ((CGRect?) -> Void)?
 
     init(image: CGImage) {
         let screen = NSScreen.main ?? NSScreen.screens[0]
-        cwLog("init — screen.frame=\(screen.frame) image=\(image.width)x\(image.height)")
+        log.debug("init — screen.frame=\(NSStringFromRect(screen.frame), privacy: .public) image=\(image.width)x\(image.height)")
         super.init(
             contentRect: screen.frame,
             styleMask: [.borderless],
@@ -40,7 +29,7 @@ final class CropWindow: NSWindow {
         }
         contentView = cropView
         makeFirstResponder(cropView)
-        cwLog("init — done")
+        log.debug("init — done")
     }
 
     required init?(coder: NSCoder) {
@@ -51,11 +40,11 @@ final class CropWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 
     deinit {
-        cwLog("deinit")
+        log.debug("deinit")
     }
 
     private func finish(_ rect: CGRect?) {
-        cwLog("finish rect=\(String(describing: rect))")
+        log.debug("finish rect=\(String(describing: rect), privacy: .public)")
         close()
         cropCompletion?(rect)
     }
@@ -139,7 +128,7 @@ private final class CropView: NSView {
         startPoint = convert(event.locationInWindow, from: nil)
         currentPoint = startPoint
         isDragging = true
-        cwLog("mouseDown at \(startPoint)")
+        log.debug("mouseDown at \(NSStringFromPoint(self.startPoint), privacy: .public)")
         setNeedsDisplay(bounds)
     }
 
@@ -151,13 +140,13 @@ private final class CropView: NSView {
     override func mouseUp(with event: NSEvent) {
         currentPoint = convert(event.locationInWindow, from: nil)
         isDragging = false
-        cwLog("mouseUp current=\(currentPoint) start=\(startPoint)")
+        log.debug("mouseUp current=\(NSStringFromPoint(self.currentPoint), privacy: .public) start=\(NSStringFromPoint(self.startPoint), privacy: .public)")
 
         let dX = currentPoint.x - startPoint.x
         let dY = currentPoint.y - startPoint.y
 
         guard abs(dX) >= 10, abs(dY) >= 10 else {
-            cwLog("mouseUp — selection too small (\(dX)x\(dY)), cancelling")
+            log.info("mouseUp — selection too small (\(dX)x\(dY)), cancelling")
             selectionCompletion?(nil)
             DispatchQueue.main.async {
                 let alert = NSAlert()
@@ -169,13 +158,13 @@ private final class CropView: NSView {
         }
 
         let selectionRect = computeSelectionRect()
-        cwLog("mouseUp — completing with selectionRect=\(selectionRect)")
+        log.debug("mouseUp — completing with selectionRect=\(NSStringFromRect(selectionRect), privacy: .public)")
         selectionCompletion?(selectionRect)
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == UInt16(kVK_Escape) {
-            cwLog("keyDown — Escape, cancelling")
+            log.debug("keyDown — Escape, cancelling")
             selectionCompletion?(nil)
         } else {
             super.keyDown(with: event)
