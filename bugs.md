@@ -141,10 +141,12 @@
 
 Это стандартный шаблон для одноразового `withObservationTracking`, но `onChange` в Observation вызывается **не** на MainActor. `DispatchQueue.main.async` решает это, но во время диспатча возможен «дребезг»: несколько изменений до того, как очередь обработается, дают только один re-tracking — это норма, не баг. Замечание скорее на будущее.
 
-### [ ] 17. `NSImage(cgImage: image, size: .zero)` при копировании в буфер
+### [x] 17. `NSImage(cgImage: image, size: .zero)` при копировании в буфер
 **Файл:** `Capture/CaptureEngine.swift:155`
 
 `size: .zero` означает логический размер 0×0. Некоторые получатели буфера (особенно старые приложения, которые читают `NSImage.size`, а не пиксельные размеры) могут вставить «нулевую» картинку или растянуть до своих границ. Корректно — передать `CGSize(width: image.width, height: image.height)`.
+
+**Status:** исправлено в 1532870 — `copyToClipboard` теперь оборачивает `CGImage` в `NSImage` с фактическими пиксельными размерами (`NSSize(width: image.width, height: image.height)`) вместо `.zero`.
 
 ### [ ] 18. `SMAppService.mainApp.register/unregister` ошибки проглатываются `try?`
 **Файл:** `Preferences/AppSettings.swift:61-65`
