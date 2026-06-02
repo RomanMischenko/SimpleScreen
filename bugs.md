@@ -150,10 +150,12 @@
 
 **Status:** исправлено в 1532870 — `copyToClipboard` теперь оборачивает `CGImage` в `NSImage` с фактическими пиксельными размерами (`NSSize(width: image.width, height: image.height)`) вместо `.zero`.
 
-### [ ] 18. `SMAppService.mainApp.register/unregister` ошибки проглатываются `try?`
+### [x] 18. `SMAppService.mainApp.register/unregister` ошибки проглатываются `try?`
 **Файл:** `Preferences/AppSettings.swift:61-65`
 
 Тогглу «Launch at Login» можно молча провалиться (например, если бинарь не подписан/не нотаризован, или политика управляется MDM). Пользователь увидит «включено» в чекбоксе, но реально не запустится при логине.
+
+**Status:** исправлено в 7ea11de — `try?` заменён на `do/catch` в `AppSettings.launchAtLogin.didSet`; при ошибке `SMAppService` пишется `.error` через новый `os.Logger` (category `launchAtLogin`), значение откатывается в `oldValue` через guard-флаг `isRevertingLaunchAtLogin` (чтобы SwiftUI-чекбокс отразил реальное состояние и не было рекурсии didSet), и вызывается closure `onLaunchAtLoginRegistrationFailed`. `AppDelegate` подключает closure к новому `NotificationManager.postLaunchAtLoginFailedNotification(enabling:error:)` с UUID-identifier'ом `ss.launch-at-login.failed.<uuid>` (повторные ошибки накапливаются). Категория `launchAtLogin` зарегистрирована в `AGENTS.md`.
 
 ### [ ] 19. Carbon-колбэк дёргает словарь без явной синхронизации
 **Файл:** `HotKeys/HotKeyManager.swift:18-24`
