@@ -137,7 +137,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                     self?.cropWindow = nil
                 }
                 guard let self, let rect else { return }
-                let scaleFactor = NSScreen.main?.backingScaleFactor ?? 1.0
+                let scaleFactor = CaptureEngine.backingScaleFactor(for: CGMainDisplayID())
                 let pixelRect = CGRect(
                     x: rect.origin.x * scaleFactor,
                     y: rect.origin.y * scaleFactor,

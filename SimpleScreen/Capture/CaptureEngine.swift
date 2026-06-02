@@ -35,7 +35,7 @@ struct Capture {
 
             let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
             let config = SCStreamConfiguration()
-            let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+            let scale = CaptureEngine.backingScaleFactor(for: CGMainDisplayID())
             config.width = Int(CGFloat(display.width) * scale)
             config.height = Int(CGFloat(display.height) * scale)
 
@@ -58,6 +58,16 @@ struct Capture {
 
     static func cropImage(_ image: CGImage, to rect: CGRect) -> CGImage? {
         image.cropping(to: rect)
+    }
+
+    static func backingScaleFactor(for displayID: CGDirectDisplayID) -> CGFloat {
+        for screen in NSScreen.screens {
+            if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+               number == displayID {
+                return screen.backingScaleFactor
+            }
+        }
+        return NSScreen.main?.backingScaleFactor ?? 1.0
     }
 
     private func dispatchPostCapture(_ capture: Capture) {
