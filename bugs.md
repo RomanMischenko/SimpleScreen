@@ -131,10 +131,12 @@
 
 ## 🟡 Незначительные
 
-### [ ] 15. `InstallEventHandler` результат не проверяется
+### [x] 15. `InstallEventHandler` результат не проверяется
 **Файл:** `HotKeys/HotKeyManager.swift:14-31`
 
 Возвращаемое значение `OSStatus` игнорируется. Если установка обработчика провалится, `eventHandlerRef == nil`, и все колбэки молча не сработают, без диагностики. В дикой природе случается редко, но при 24/7 — хорошо бы хотя бы залогировать.
+
+**Status:** исправлено в 63dc511 — `HotKeyManager.setup()` теперь захватывает `OSStatus` от `InstallEventHandler` и при `!= noErr` пишет `.error` через новый `os.Logger` под subsystem `com.simplescreenapp.SimpleScreen`, category `hotkeys` (категория добавлена в `AGENTS.md`).
 
 ### [ ] 16. `observeKeyEquivalents` использует `withObservationTracking` через `DispatchQueue.main.async` и рекурсивно переустанавливается
 **Файл:** `Menu/StatusBarController.swift:145-157`
