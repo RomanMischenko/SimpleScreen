@@ -138,9 +138,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 }
                 guard let self, let rect else { return }
                 let scaleFactor = CaptureEngine.backingScaleFactor(for: CGMainDisplayID())
+                let imageHeightPx = CGFloat(fullImage.height)
                 let pixelRect = CGRect(
                     x: rect.origin.x * scaleFactor,
-                    y: rect.origin.y * scaleFactor,
+                    y: imageHeightPx - (rect.origin.y + rect.height) * scaleFactor,
                     width: rect.width * scaleFactor,
                     height: rect.height * scaleFactor
                 )
