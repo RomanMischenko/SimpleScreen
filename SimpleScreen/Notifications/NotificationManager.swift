@@ -34,6 +34,23 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(request) { _ in }
     }
 
+    func postHotkeyConflictNotification(shortcuts: [String]) {
+        guard !shortcuts.isEmpty else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Hotkey Conflict"
+        let list = shortcuts.joined(separator: ", ")
+        let verb = shortcuts.count == 1 ? "is" : "are"
+        content.body = "\(list) \(verb) reserved by macOS. Open Preferences to change, or disable the system shortcut in System Settings → Keyboard → Shortcuts → Screenshots."
+        content.categoryIdentifier = "ss.hotkey.conflict"
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "ss.hotkey.conflict",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
     func postCopiedNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Screenshot Copied"

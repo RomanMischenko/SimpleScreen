@@ -12,6 +12,8 @@ final class StatusBarController {
     private let hotKeyManager: HotKeyManager
     private var cropWindow: CropWindow?
     private var preferencesPanel: NSPanel?
+    private(set) var fullScreenConflict = false
+    private(set) var areaSelectConflict = false
 
     init(settings: AppSettings, captureEngine: CaptureEngine, hotKeyManager: HotKeyManager) {
         self.settings = settings
@@ -63,11 +65,19 @@ final class StatusBarController {
             let view = PreferencesView(
                 settings: settings,
                 hotKeyManager: hotKeyManager,
+                initialFullScreenConflict: fullScreenConflict,
+                initialAreaSelectConflict: areaSelectConflict,
                 fullScreenCallback: { [weak self] in
                     Task { await self?.captureEngine.captureFullScreen() }
                 },
                 areaSelectCallback: { [weak self] in
                     Task { await self?.showAreaSelectionWindow() }
+                },
+                onResolveConflict: { [weak self] mode in
+                    switch mode {
+                    case .fullScreen: self?.markConflict(fullScreen: false)
+                    case .areaSelect: self?.markConflict(areaSelect: false)
+                    }
                 },
                 onDone: { [weak self] in
                     self?.preferencesPanel?.orderOut(nil)
@@ -123,6 +133,13 @@ final class StatusBarController {
     }
 
     func updateAreaSelectKeyEquivalent() {
+        if areaSelectConflict {
+            captureAreaItem.title = "Capture Selected Area (in use by system)"
+            captureAreaItem.keyEquivalent = ""
+            captureAreaItem.keyEquivalentModifierMask = []
+            return
+        }
+        captureAreaItem.title = "Capture Selected Area"
         if let shortcut = settings.areaSelectShortcut {
             captureAreaItem.keyEquivalent = keyEquivalentString(for: shortcut.keyCode)
             captureAreaItem.keyEquivalentModifierMask = nsModifierFlags(from: shortcut.modifierFlags)
@@ -133,6 +150,13 @@ final class StatusBarController {
     }
 
     func updateFullScreenKeyEquivalent() {
+        if fullScreenConflict {
+            captureFullScreenItem.title = "Capture Full Screen (in use by system)"
+            captureFullScreenItem.keyEquivalent = ""
+            captureFullScreenItem.keyEquivalentModifierMask = []
+            return
+        }
+        captureFullScreenItem.title = "Capture Full Screen"
         if let shortcut = settings.fullScreenShortcut {
             captureFullScreenItem.keyEquivalent = keyEquivalentString(for: shortcut.keyCode)
             captureFullScreenItem.keyEquivalentModifierMask = nsModifierFlags(from: shortcut.modifierFlags)
@@ -140,6 +164,13 @@ final class StatusBarController {
             captureFullScreenItem.keyEquivalent = ""
             captureFullScreenItem.keyEquivalentModifierMask = []
         }
+    }
+
+    func markConflict(fullScreen: Bool? = nil, areaSelect: Bool? = nil) {
+        if let fullScreen { fullScreenConflict = fullScreen }
+        if let areaSelect { areaSelectConflict = areaSelect }
+        updateFullScreenKeyEquivalent()
+        updateAreaSelectKeyEquivalent()
     }
 
     private func observeKeyEquivalents() {

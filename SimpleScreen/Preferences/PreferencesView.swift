@@ -15,11 +15,15 @@ final class ShortcutRecordingState {
 struct PreferencesView: View {
     @Bindable var settings: AppSettings
     let hotKeyManager: HotKeyManager
+    let initialFullScreenConflict: Bool
+    let initialAreaSelectConflict: Bool
     let fullScreenCallback: () -> Void
     let areaSelectCallback: () -> Void
+    let onResolveConflict: (CaptureMode) -> Void
     let onDone: () -> Void
 
     @State private var rec = ShortcutRecordingState()
+    @State private var didSyncInitialConflicts = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,6 +81,13 @@ struct PreferencesView: View {
             .padding([.horizontal, .bottom])
         }
         .frame(minWidth: 460)
+        .onAppear {
+            if !didSyncInitialConflicts {
+                rec.fullScreenConflict = initialFullScreenConflict
+                rec.areaSelectConflict = initialAreaSelectConflict
+                didSyncInitialConflicts = true
+            }
+        }
         .onDisappear { cancelRecording() }
     }
 
@@ -181,6 +192,7 @@ struct PreferencesView: View {
                 rec.isRecordingAreaSelect = false
                 rec.areaSelectConflict = false
             }
+            onResolveConflict(mode)
             removeMonitor(rec: rec)
         } catch HotKeyError.conflict {
             if let old = oldShortcut {
