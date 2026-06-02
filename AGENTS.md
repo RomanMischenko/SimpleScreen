@@ -17,9 +17,7 @@
 
 - **App is sandbox-disabled** (`com.apple.security.app-sandbox = false` in entitlements). It accesses `UserDefaults`, filesystem, `SMAppService` — do not enable sandbox without rewriting persistence and launch-at-login.
 - **Dock-hidden**: `NSApp.setActivationPolicy(.accessory)` + `LSUIElement = true` in Info.plist. No Dock icon.
-- **Area selection overlay** is a borderless `NSPanel` at `.screenSaver` level. `isReleasedWhenClosed = false` is critical — AppKit over-releases it otherwise. Do not call `NSApp.activate` before showing the overlay (causes `EXC_BAD_ACCESS` on macOS 26).
-- **Coordinate flip**: `CaptureEngine.captureArea(rect:)` flips the y-axis from AppKit (bottom-left) to ScreenCaptureKit (top-left) when building `sourceRect`.
-- **150 ms sleep** before area capture — lets the selection overlay clear from the compositor.
+- **Area selection**: captures the full screen first via `SCScreenshotManager.captureImage`, then presents the image in a borderless `NSWindow` at `.floating` level for drag-to-crop. No compositor delay or coordinate conversion needed.
 - **Capture guard**: `isCapturing` flag silently drops a second capture if one is already in progress.
 - **UserDefaults keys** are `ss_`-prefixed (e.g. `ss_postCaptureAction`, `ss_saveLocationPath`).
 

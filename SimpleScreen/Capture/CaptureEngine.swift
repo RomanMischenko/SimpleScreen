@@ -20,64 +20,40 @@ struct Capture {
         self.notificationManager = notificationManager
     }
 
-    func captureFullScreen() async {
-        guard CGPreflightScreenCaptureAccess() else { return }
-        guard !isCapturing else { return }
+    func captureDisplayImage() async -> CGImage? {
+        guard CGPreflightScreenCaptureAccess() else { return nil }
+        guard !isCapturing else { return nil }
         isCapturing = true
         defer { isCapturing = false }
 
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) else { return }
+            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) else { return nil }
 
             let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
             let config = SCStreamConfiguration()
             config.width = display.width
             config.height = display.height
 
-            let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            let capture = Capture(mode: .fullScreen, timestamp: Date(), image: cgImage)
-            dispatchPostCapture(capture)
-        } catch {}
+            return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        } catch {
+            return nil
+        }
     }
 
-    func captureArea(rect: CGRect) async {
-        guard CGPreflightScreenCaptureAccess() else { return }
-        guard !isCapturing else { return }
-        isCapturing = true
-        defer { isCapturing = false }
+    func captureFullScreen() async {
+        guard let image = await captureDisplayImage() else { return }
+        let capture = Capture(mode: .fullScreen, timestamp: Date(), image: image)
+        dispatchPostCapture(capture)
+    }
 
-        // Wait for the selection overlay to fully clear from the compositor.
-        try? await Task.sleep(nanoseconds: 150_000_000)
+    func handleAreaCapture(_ image: CGImage) {
+        let capture = Capture(mode: .areaSelect, timestamp: Date(), image: image)
+        dispatchPostCapture(capture)
+    }
 
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) else { return }
-
-            let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
-            let config = SCStreamConfiguration()
-
-            let scaleFactor = NSScreen.main?.backingScaleFactor ?? 1.0
-            let displayHeight = NSScreen.main?.frame.height ?? CGFloat(display.height) / scaleFactor
-
-            // sourceRect uses top-left origin; rect arrives in screen coords (bottom-left origin)
-            config.sourceRect = CGRect(
-                x: rect.origin.x,
-                y: displayHeight - rect.origin.y - rect.height,
-                width: rect.width,
-                height: rect.height
-            )
-            config.width = Int(rect.width * scaleFactor)
-            config.height = Int(rect.height * scaleFactor)
-
-            log("captureArea sourceRect=\(config.sourceRect) px=\(config.width)x\(config.height)")
-            let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            log("captureArea image=\(cgImage.width)x\(cgImage.height)")
-            let capture = Capture(mode: .areaSelect, timestamp: Date(), image: cgImage)
-            dispatchPostCapture(capture)
-        } catch {
-            log("captureArea FAILED: \(error)")
-        }
+    static func cropImage(_ image: CGImage, to rect: CGRect) -> CGImage? {
+        image.cropping(to: rect)
     }
 
     private func dispatchPostCapture(_ capture: Capture) {

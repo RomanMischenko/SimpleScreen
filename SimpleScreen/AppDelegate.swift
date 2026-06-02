@@ -52,9 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try hotKeyManager.register(shortcut: shortcut, id: 2) { [weak self] in
                 guard let self else { return }
-                DispatchQueue.main.async {
-                    self.statusBarController.showAreaSelectionWindow()
-                }
+                Task { await self.statusBarController.showAreaSelectionWindow() }
             }
             settings.areaSelectShortcut = shortcut
         } catch HotKeyError.conflict {

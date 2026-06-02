@@ -10,7 +10,7 @@ final class StatusBarController {
     let settings: AppSettings
     private let captureEngine: CaptureEngine
     private let hotKeyManager: HotKeyManager
-    private var areaSelectionWindow: AreaSelectionWindow?
+    private var cropWindow: CropWindow?
     private var preferencesPanel: NSPanel?
 
     init(settings: AppSettings, captureEngine: CaptureEngine, hotKeyManager: HotKeyManager) {
@@ -55,7 +55,7 @@ final class StatusBarController {
     }
 
     @objc private func triggerAreaCapture() {
-        showAreaSelectionWindow()
+        Task { await showAreaSelectionWindow() }
     }
 
     @objc func openPreferences() {
@@ -67,7 +67,7 @@ final class StatusBarController {
                     Task { await self?.captureEngine.captureFullScreen() }
                 },
                 areaSelectCallback: { [weak self] in
-                    self?.showAreaSelectionWindow()
+                    Task { await self?.showAreaSelectionWindow() }
                 },
                 onDone: { [weak self] in
                     self?.preferencesPanel?.orderOut(nil)
@@ -93,26 +93,33 @@ final class StatusBarController {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func showAreaSelectionWindow() {
-        if let existing = areaSelectionWindow {
-            existing.close()
-            areaSelectionWindow = nil
-        }
-        let window = AreaSelectionWindow()
-        areaSelectionWindow = window
-        window.completion = { [weak self] rect in
-            // Defer nil-out to next run loop so the current event's autorelease
-            // pool fully drains before the window/view are released.
-            DispatchQueue.main.async {
-                self?.areaSelectionWindow = nil
+    func showAreaSelectionWindow() async {
+        guard let fullImage = await captureEngine.captureDisplayImage() else { return }
+
+        await MainActor.run {
+            if let existing = cropWindow {
+                existing.close()
+                cropWindow = nil
             }
-            guard let rect else { return }
-            Task { await self?.captureEngine.captureArea(rect: rect) }
+            let window = CropWindow(image: fullImage)
+            cropWindow = window
+            window.cropCompletion = { [weak self] rect in
+                DispatchQueue.main.async {
+                    self?.cropWindow = nil
+                }
+                guard let self, let rect else { return }
+                let scaleFactor = NSScreen.main?.backingScaleFactor ?? 1.0
+                let pixelRect = CGRect(
+                    x: rect.origin.x * scaleFactor,
+                    y: rect.origin.y * scaleFactor,
+                    width: rect.width * scaleFactor,
+                    height: rect.height * scaleFactor
+                )
+                guard let cropped = CaptureEngine.cropImage(fullImage, to: pixelRect) else { return }
+                self.captureEngine.handleAreaCapture(cropped)
+            }
+            window.makeKeyAndOrderFront(nil)
         }
-        // Do NOT call NSApp.activate — on macOS 26 it triggers extra window-management
-        // releases that over-release the overlay window and cause EXC_BAD_ACCESS.
-        // canBecomeKey=true on AreaSelectionWindow ensures keyboard events still work.
-        window.makeKeyAndOrderFront(nil)
     }
 
     func updateAreaSelectKeyEquivalent() {
