@@ -30,6 +30,7 @@ final class CropWindow: NSWindow {
         backgroundColor = .black
         isOpaque = true
         hasShadow = false
+        isReleasedWhenClosed = false
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
@@ -66,8 +67,7 @@ private final class CropView: NSView {
     private var isDragging = false
 
     init(frame: NSRect, image: CGImage) {
-        let size = NSSize(width: image.width, height: image.height)
-        nsImage = NSImage(cgImage: image, size: size)
+        nsImage = NSImage(cgImage: image, size: frame.size)
         super.init(frame: frame)
     }
 
@@ -78,21 +78,6 @@ private final class CropView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .cursorUpdate],
-            owner: self,
-            userInfo: nil
-        ))
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        NSCursor.crosshair.set()
-    }
 
     override func draw(_ dirtyRect: NSRect) {
         nsImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1.0)

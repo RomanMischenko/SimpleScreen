@@ -32,8 +32,9 @@ struct Capture {
 
             let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
             let config = SCStreamConfiguration()
-            config.width = display.width
-            config.height = display.height
+            let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+            config.width = Int(CGFloat(display.width) * scale)
+            config.height = Int(CGFloat(display.height) * scale)
 
             return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         } catch {
