@@ -56,10 +56,12 @@
 
 ## 🟠 Существенные
 
-### [ ] 5. Таймер запроса разрешений крутится вечно, если пользователь нажал "Later"
+### [x] 5. Таймер запроса разрешений крутится вечно, если пользователь нажал "Later"
 **Файл:** `AppDelegate.swift:81-87`
 
 После клика "Later" `permissionTimer` опрашивает `CGPreflightScreenCaptureAccess()` каждую секунду пожизненно. При 24/7 без выданного разрешения — это бесконечный 1Hz wake-up главного потока. `permissionAlert` тоже никогда не зануляется в этой ветке, что мешает корректной логике в `applicationDidBecomeActive` (`AppDelegate.swift:30-34`).
+
+**Status:** исправлено в b715683 — `Timer.scheduledTimer` удалён, состояние «ждём грант» переведено на `Bool awaitingScreenCapturePermission`, а перепроверка разрешения теперь событийная: `applicationDidBecomeActive` + новый `NSMenuDelegate.menuWillOpen` в `StatusBarController` (для accessory-приложения клик по статус-бару не даёт `didBecomeActive`).
 
 ### [ ] 6. Модальные `NSAlert.runModal()` блокируют главный поток в фоновом приложении
 **Файлы:** `Capture/CaptureEngine.swift:127-129, 135-138`, `Capture/AreaSelectionWindow.swift:159-164`
