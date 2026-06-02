@@ -7,7 +7,7 @@ private let log = Logger(subsystem: "com.simplescreenapp.SimpleScreen", category
 final class CropWindow: NSWindow {
     var cropCompletion: ((CGRect?) -> Void)?
 
-    init(image: CGImage) {
+    init(image: CGImage, onSelectionTooSmall: (() -> Void)? = nil) {
         let screen = NSScreen.main ?? NSScreen.screens[0]
         log.debug("init — screen.frame=\(NSStringFromRect(screen.frame), privacy: .public) image=\(image.width)x\(image.height)")
         super.init(
@@ -27,6 +27,7 @@ final class CropWindow: NSWindow {
         cropView.selectionCompletion = { [weak self] rect in
             self?.finish(rect)
         }
+        cropView.tooSmallHandler = onSelectionTooSmall
         contentView = cropView
         makeFirstResponder(cropView)
         log.debug("init — done")
@@ -52,6 +53,7 @@ final class CropWindow: NSWindow {
 
 private final class CropView: NSView {
     var selectionCompletion: ((CGRect?) -> Void)?
+    var tooSmallHandler: (() -> Void)?
 
     private let nsImage: NSImage
     private var startPoint: NSPoint = .zero
@@ -148,12 +150,7 @@ private final class CropView: NSView {
         guard abs(dX) >= 10, abs(dY) >= 10 else {
             log.info("mouseUp — selection too small (\(dX)x\(dY)), cancelling")
             selectionCompletion?(nil)
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Selection Too Small"
-                alert.informativeText = "The selected area was too small — capture cancelled."
-                alert.runModal()
-            }
+            tooSmallHandler?()
             return
         }
 

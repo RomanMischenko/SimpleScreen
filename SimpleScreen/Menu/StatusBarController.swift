@@ -10,6 +10,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     let settings: AppSettings
     private let captureEngine: CaptureEngine
     private let hotKeyManager: HotKeyManager
+    private let notificationManager: NotificationManager
     private let onMenuWillOpen: () -> Void
     private var cropWindow: CropWindow?
     private var preferencesPanel: NSPanel?
@@ -20,11 +21,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         settings: AppSettings,
         captureEngine: CaptureEngine,
         hotKeyManager: HotKeyManager,
+        notificationManager: NotificationManager,
         onMenuWillOpen: @escaping () -> Void
     ) {
         self.settings = settings
         self.captureEngine = captureEngine
         self.hotKeyManager = hotKeyManager
+        self.notificationManager = notificationManager
         self.onMenuWillOpen = onMenuWillOpen
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -125,7 +128,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 existing.close()
                 cropWindow = nil
             }
-            let window = CropWindow(image: fullImage)
+            let window = CropWindow(image: fullImage, onSelectionTooSmall: { [weak self] in
+                self?.notificationManager.postSelectionTooSmallNotification()
+            })
             cropWindow = window
             window.cropCompletion = { [weak self] rect in
                 DispatchQueue.main.async {

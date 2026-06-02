@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings: settings,
             captureEngine: captureEngine,
             hotKeyManager: hotKeyManager,
+            notificationManager: notificationManager,
             onMenuWillOpen: { [weak self] in self?.recheckScreenCapturePermission() }
         )
 

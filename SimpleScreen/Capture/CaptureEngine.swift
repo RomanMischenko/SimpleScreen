@@ -111,19 +111,13 @@ struct Capture {
         do {
             try writePNG(capture.image, to: desktopURL)
             log.info("desktop write OK: \(desktopURL.path, privacy: .public)")
-            let alert = NSAlert()
-            alert.messageText = "Screenshot Saved to Desktop"
-            alert.informativeText = "The configured save folder was unavailable. The screenshot was saved to your Desktop instead."
-            alert.runModal()
+            notificationManager.postSavedToDesktopFallbackNotification(desktopPath: desktopURL.path)
             return desktopURL.path
         } catch {
             log.error("desktop write FAILED (\(desktopURL.path, privacy: .public)): \(error.localizedDescription, privacy: .public)")
         }
 
-        let alert = NSAlert()
-        alert.messageText = "Screenshot Save Failed"
-        alert.informativeText = "Could not save to \(fileURL.path) or Desktop. Check Console.app (subsystem com.simplescreenapp.SimpleScreen) for details."
-        alert.runModal()
+        notificationManager.postSaveFailedNotification(primaryPath: fileURL.path)
         return nil
     }
 

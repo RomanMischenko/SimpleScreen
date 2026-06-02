@@ -51,6 +51,48 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(request) { _ in }
     }
 
+    func postSavedToDesktopFallbackNotification(desktopPath: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Screenshot Saved to Desktop"
+        content.body = "The configured save folder was unavailable. Saved to \(desktopPath) instead."
+        content.categoryIdentifier = "ss.capture.fallback"
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "ss.capture.fallback.\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
+    func postSaveFailedNotification(primaryPath: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Screenshot Save Failed"
+        content.body = "Could not save to \(primaryPath) or Desktop. Check Console.app (subsystem com.simplescreenapp.SimpleScreen) for details."
+        content.categoryIdentifier = "ss.capture.save-failed"
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "ss.capture.save-failed.\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
+    func postSelectionTooSmallNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Selection Too Small"
+        content.body = "The selected area was too small — capture cancelled."
+        content.categoryIdentifier = "ss.area.too-small"
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "ss.area.too-small.\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
     func postCopiedNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Screenshot Copied"
