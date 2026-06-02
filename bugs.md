@@ -45,10 +45,12 @@
 
 **Status:** исправлено в 096449a — в `CropWindow` убран мисслидинг-флаг `.nonactivatingPanel` (он игнорируется на `NSWindow`), добавлены overrides `canBecomeKey`/`canBecomeMain → true`, и в `StatusBarController.showAreaSelectionWindow` перед `makeKeyAndOrderFront` вызывается `NSApp.activate(ignoringOtherApps: true)`, чтобы LSUIElement-приложение получило фокус клавиатуры. Теперь Escape корректно отменяет выделение без алерта.
 
-### [ ] 4. Лог `/tmp/simplescreenlog.txt` растёт бесконечно
+### [x] 4. Лог `/tmp/simplescreenlog.txt` растёт бесконечно
 **Файл:** `Capture/CaptureEngine.swift:79-93`, `Capture/AreaSelectionWindow.swift:4-16`
 
 Лог пишется при каждом захвате/действии в `CropWindow`, без ротации, без ограничения размера, без переключателя. CLAUDE.md прямо подтверждает: «Not conditional — always on». За месяцы 24/7 файл вырастет в десятки/сотни МБ. Помимо места на диске — каждое сохранение делает `open/seekToEnd/write/close` синхронно на главном потоке.
+
+**Status:** исправлено в 8661f5d — логирование переведено на `os.Logger` (subsystem `com.simplescreenapp.SimpleScreen`, категории `capture`/`areaSelect`); файл `/tmp/simplescreenlog.txt` больше не пишется, sync-I/O на main thread устранён, ротация — на стороне macOS unified logging.
 
 ---
 
