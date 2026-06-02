@@ -70,10 +70,12 @@
 
 **Status:** исправлено в 5b17aa5 — все три `NSAlert.runModal()` (fallback-сохранение на Desktop, полный провал сохранения, слишком маленькое выделение) заменены на неблокирующие баннеры `UNUserNotificationCenter` через новые методы `NotificationManager.postSavedToDesktopFallbackNotification` / `postSaveFailedNotification` / `postSelectionTooSmallNotification` с уникальными UUID-identifier'ами, чтобы повторные инциденты накапливались отдельными записями. В `CropWindow` добавлен closure `onSelectionTooSmall`, который `StatusBarController` связывает с `NotificationManager`. Main thread больше не блокируется при недоступной папке сохранения.
 
-### [ ] 7. Коллизия имён файлов в пределах одной секунды → тихая перезапись
+### [x] 7. Коллизия имён файлов в пределах одной секунды → тихая перезапись
 **Файл:** `Capture/CaptureEngine.swift:96-98, 150`
 
 Формат имени `"Screenshot yyyy-MM-dd 'at' HH.mm.ss.png"` — секундная точность. Два скриншота в одну и ту же секунду перезаписывают друг друга (`data.write(to:options:.atomic)` — атомарная замена). Возможные триггеры: автоповтор удержанного хоткея, два быстрых нажатия, скрипт. Потеря данных без предупреждения.
+
+**Status:** исправлено в 69527f3 — в `CaptureEngine` добавлен private helper `nonCollidingURL(for:)`, через который теперь пропускаются как основной save-path, так и Desktop-fallback. При коллизии имени к stem добавляется Finder-стиль суффикс ` 2`, ` 3`, ... до первого свободного слота — тихая перезапись устранена.
 
 ### [ ] 8. `DateFormatter` без явной локали — нестабильные имена файлов
 **Файл:** `Capture/CaptureEngine.swift:96-97`
