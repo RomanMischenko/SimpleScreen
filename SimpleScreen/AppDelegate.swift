@@ -34,29 +34,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func registerFullScreenHotKey() {
-        let shortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_3), modifierFlags: UInt32(cmdKey | shiftKey))
+        let defaultShortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_3), modifierFlags: UInt32(cmdKey | shiftKey))
+        let stored = settings.fullScreenShortcut
+        let shortcut = stored ?? defaultShortcut
         do {
             try hotKeyManager.register(shortcut: shortcut, id: 1) { [weak self] in
                 guard let self else { return }
                 Task { await self.captureEngine.captureFullScreen() }
             }
-            settings.fullScreenShortcut = shortcut
+            if stored == nil {
+                settings.fullScreenShortcut = shortcut
+            }
         } catch HotKeyError.conflict {
-            settings.fullScreenShortcut = nil
         } catch {}
         statusBarController.updateFullScreenKeyEquivalent()
     }
 
     private func registerAreaSelectHotKey() {
-        let shortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_4), modifierFlags: UInt32(cmdKey | shiftKey))
+        let defaultShortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_4), modifierFlags: UInt32(cmdKey | shiftKey))
+        let stored = settings.areaSelectShortcut
+        let shortcut = stored ?? defaultShortcut
         do {
             try hotKeyManager.register(shortcut: shortcut, id: 2) { [weak self] in
                 guard let self else { return }
                 Task { await self.statusBarController.showAreaSelectionWindow() }
             }
-            settings.areaSelectShortcut = shortcut
+            if stored == nil {
+                settings.areaSelectShortcut = shortcut
+            }
         } catch HotKeyError.conflict {
-            settings.areaSelectShortcut = nil
         } catch {}
         statusBarController.updateAreaSelectKeyEquivalent()
     }
