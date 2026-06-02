@@ -9,8 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var captureEngine: CaptureEngine!
     private var statusBarController: StatusBarController!
 
-    private var permissionAlert: NSAlert?
-    private var permissionTimer: Timer?
+    private var awaitingScreenCapturePermission = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -20,7 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notificationManager = NotificationManager()
         notificationManager.requestAuthorization()
         captureEngine = CaptureEngine(settings: settings, notificationManager: notificationManager)
-        statusBarController = StatusBarController(settings: settings, captureEngine: captureEngine, hotKeyManager: hotKeyManager)
+        statusBarController = StatusBarController(
+            settings: settings,
+            captureEngine: captureEngine,
+            hotKeyManager: hotKeyManager,
+            onMenuWillOpen: { [weak self] in self?.recheckScreenCapturePermission() }
+        )
 
         var conflictLabels: [String] = []
         if let label = registerFullScreenHotKey() { conflictLabels.append(label) }
@@ -32,7 +36,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        if permissionAlert != nil && CGPreflightScreenCaptureAccess() {
+        if awaitingScreenCapturePermission && CGPreflightScreenCaptureAccess() {
+            grantedPermission()
+        }
+    }
+
+    func recheckScreenCapturePermission() {
+        if awaitingScreenCapturePermission && CGPreflightScreenCaptureAccess() {
             grantedPermission()
         }
     }
@@ -110,31 +120,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !CGPreflightScreenCaptureAccess() else { return }
 
         statusBarController.disableCaptureItems()
+        awaitingScreenCapturePermission = true
 
         let alert = NSAlert()
         alert.messageText = "Screen Recording Permission Required"
         alert.informativeText = "SimpleScreen requires Screen Recording permission to capture screenshots. Grant access in System Settings, then return to SimpleScreen."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Later")
-        permissionAlert = alert
 
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
         }
-
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-            guard let self else { timer.invalidate(); return }
-            if CGPreflightScreenCaptureAccess() {
-                self.grantedPermission()
-            }
-        }
     }
 
     private func grantedPermission() {
-        permissionTimer?.invalidate()
-        permissionTimer = nil
-        permissionAlert = nil
+        awaitingScreenCapturePermission = false
         statusBarController.enableCaptureItems()
     }
 }

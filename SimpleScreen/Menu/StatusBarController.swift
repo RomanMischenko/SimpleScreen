@@ -3,28 +3,37 @@ import Carbon
 import Observation
 import SwiftUI
 
-final class StatusBarController {
+final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private(set) var captureFullScreenItem: NSMenuItem
     private(set) var captureAreaItem: NSMenuItem
     let settings: AppSettings
     private let captureEngine: CaptureEngine
     private let hotKeyManager: HotKeyManager
+    private let onMenuWillOpen: () -> Void
     private var cropWindow: CropWindow?
     private var preferencesPanel: NSPanel?
     private(set) var fullScreenConflict = false
     private(set) var areaSelectConflict = false
 
-    init(settings: AppSettings, captureEngine: CaptureEngine, hotKeyManager: HotKeyManager) {
+    init(
+        settings: AppSettings,
+        captureEngine: CaptureEngine,
+        hotKeyManager: HotKeyManager,
+        onMenuWillOpen: @escaping () -> Void
+    ) {
         self.settings = settings
         self.captureEngine = captureEngine
         self.hotKeyManager = hotKeyManager
+        self.onMenuWillOpen = onMenuWillOpen
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "SimpleScreen")
 
         captureFullScreenItem = NSMenuItem(title: "Capture Full Screen", action: nil, keyEquivalent: "")
         captureAreaItem = NSMenuItem(title: "Capture Selected Area", action: nil, keyEquivalent: "")
+
+        super.init()
 
         let menu = NSMenu()
         menu.addItem(captureFullScreenItem)
@@ -38,6 +47,7 @@ final class StatusBarController {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+        menu.delegate = self
 
         captureFullScreenItem.target = self
         captureFullScreenItem.action = #selector(triggerFullScreenCapture)
@@ -50,6 +60,10 @@ final class StatusBarController {
 
         updateFullScreenKeyEquivalent()
         observeKeyEquivalents()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        onMenuWillOpen()
     }
 
     @objc private func triggerFullScreenCapture() {
