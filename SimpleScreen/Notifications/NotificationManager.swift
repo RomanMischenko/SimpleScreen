@@ -7,8 +7,26 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
     }
 
-    func requestAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    // Lazily request notification permission: only ask the system when we actually
+    // have something to show. Avoids popping the authorization dialog at launch.
+    private func post(_ request: UNNotificationRequest) {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .notDetermined:
+                // First real reason to notify — only now do we ask.
+                UNUserNotificationCenter.current()
+                    .requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                        if granted {
+                            UNUserNotificationCenter.current().add(request) { _ in }
+                        }
+                    }
+            case .denied:
+                break // respect the user's choice, don't deliver
+            default:
+                UNUserNotificationCenter.current().add(request) { _ in }
+            }
+        }
     }
 
     // Allow banners and sound even while the app is the active process.
@@ -31,7 +49,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        post(request)
     }
 
     func postHotkeyConflictNotification(shortcuts: [String]) {
@@ -48,7 +66,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        post(request)
     }
 
     func postSavedToDesktopFallbackNotification(desktopPath: String) {
@@ -62,7 +80,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        post(request)
     }
 
     func postSaveFailedNotification(primaryPath: String) {
@@ -76,7 +94,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        post(request)
     }
 
     func postSelectionTooSmallNotification() {
@@ -90,7 +108,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        post(request)
     }
 
     func postCopiedNotification() {
@@ -104,6 +122,6 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        post(request)
     }
 }

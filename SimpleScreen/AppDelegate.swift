@@ -17,7 +17,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyManager = HotKeyManager()
         hotKeyManager.setup()
         notificationManager = NotificationManager()
-        notificationManager.requestAuthorization()
         captureEngine = CaptureEngine(settings: settings, notificationManager: notificationManager)
         statusBarController = StatusBarController(
             settings: settings,
