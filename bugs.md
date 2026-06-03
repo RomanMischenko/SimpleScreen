@@ -173,20 +173,26 @@ Carbon hot-key events приходят на main thread, словари `callbac
 
 **Status:** by design — производительность вне фокуса аудита (см. преамбулу bugs.md). Полная перерисовка `CropView` при `mouseDragged` допустима и не угрожает надёжности 24/7; UX перетаскивания на retina-дисплеях достаточный.
 
-### [ ] 21. `Capture` (struct) — слишком общее имя
+### [x] 21. `Capture` (struct) — слишком общее имя
 **Файл:** `Capture/CaptureEngine.swift:6-10`
 
 В namespace проекта `Capture` совпадает с названием модуля/группы. Конфликта в Swift нет, но при добавлении нового кода/расширений может запутать.
 
-### [ ] 22. При смене директории сохранения «на лету» нет валидации
+**Status:** исправлено в f093256 — struct `Capture` переименован в `CaptureResult` (4 ссылки в `Capture/CaptureEngine.swift`: определение + 2 конструктора в `captureFullScreen`/`handleAreaCapture` + параметры `dispatchPostCapture`/`saveImageToDisk`). Имя теперь однозначно отражает семантику DTO с результатом захвата и не совпадает с именем папки/группы.
+
+### [x] 22. При смене директории сохранения «на лету» нет валидации
 **Файл:** `Preferences/PreferencesView.swift:133-142`, `Capture/CaptureEngine.swift:104-109`
 
 `NSOpenPanel.url` сохраняется как есть. Если потом папка удаляется/размонтируется/переименовывается, при сохранении `createDirectory(withIntermediateDirectories: true)` тихо пересоздаст путь (например, на сетевом диске после монтирования может появиться пустая директория не там, где ожидал пользователь). Не критично, но для 24/7 — стоит знать.
 
-### [ ] 23. `applicationWillTerminate` не реализован
+**Status:** исправлено в f093256 — в `saveImageToDisk` перед `createDirectory` проверяется, что родительская директория `saveDir` существует (`FileManager.fileExists(atPath: parentDir.path)`). При отсутствии родителя (том размонтирован, путь удалён выше выбранной папки) ИЛИ при провале `createDirectory` primary-write пропускается, и сразу выполняется существующий Desktop-fallback с баннером `postSavedToDesktopFallbackNotification`. `PreferencesView` намеренно не трогается — валидация at-save-time покрывает все edge-cases (удаление/размонтирование/переименование после конфигурации) без ложных отказов на момент выбора. Помимо этого корректно обработан финальный `postSaveFailedNotification`: путь берётся из `primaryURL`, если он был вычислен, иначе из would-be пути под `saveDir`.
+
+### [WONTFIX] 23. `applicationWillTerminate` не реализован
 **Файл:** `AppDelegate.swift`
 
 Carbon hot-keys и event handler освобождаются системой на выходе процесса, так что течь они не могут. Но если когда-нибудь добавится корректное завершение фоновых операций — здесь будет нечего вызвать.
+
+**Status:** by design — `AppDelegate` намеренно не реализует `applicationWillTerminate(_:)`. Carbon-хоткеи и event handler освобождаются OS при exit процесса, `UserDefaults` пишется синхронно при изменении, фоновых задач, требующих drain, нет. Пустой stub был бы мёртвым кодом. Если в будущем появятся ресурсы, требующие явного flush (in-memory очередь, открытый file handle и т.п.), хук добавится тогда — не превентивно. Продублировано в `AGENTS.md` (`Key Gotchas`, пункт «No `applicationWillTerminate` by design»), т.к. `bugs.md` временный.
 
 ### [x] 24. `PreferencesView` использует `@State private var rec = ShortcutRecordingState()`
 **Файл:** `Preferences/PreferencesView.swift:22`
