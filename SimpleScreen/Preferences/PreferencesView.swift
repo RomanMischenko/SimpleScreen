@@ -2,7 +2,19 @@ import AppKit
 import Carbon
 import SwiftUI
 
-// Reference type so NSEvent monitor closures can mutate recording state and trigger SwiftUI updates
+// Reference type so NSEvent monitor closures can mutate recording state and trigger SwiftUI updates.
+//
+// Owned by `PreferencesView` as `@State private var rec = ShortcutRecordingState()`.
+// Per Apple's Observation guidance, `@State` with an `@Observable` reference type is the
+// idiomatic pattern for view-owned model state — `@State` storage persists across view
+// struct re-creations, and Observation tracks mutations of the boxed instance.
+//
+// The `eventMonitor: Any?` field stays here because the NSEvent local monitor closure
+// must mutate it from inside itself when the user cancels — reference semantics required.
+//
+// State survives reopening the Preferences window because `StatusBarController.preferencesPanel`
+// caches the `NSPanel` + its `NSHostingView` (see `StatusBarController.swift:80-118`), so the
+// `@State` storage lives for the whole panel lifetime, not per show.
 @Observable
 final class ShortcutRecordingState {
     var isRecordingFullScreen = false
@@ -164,7 +176,11 @@ struct PreferencesView: View {
                 cancelRecording()
                 return nil
             }
-            let carbonMods = carbonModifiers(from: event.modifierFlags)
+            // Mask off device-dependent bits so only the canonical modifier set reaches
+            // the Carbon translation — protects against spurious matches if NSEvent ever
+            // surfaces device-specific flags in higher bits.
+            let cleanFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let carbonMods = carbonModifiers(from: cleanFlags)
             // Require at least one modifier and a non-modifier key — reject bare
             // letters (would hijack the key globally) and modifier-only presses.
             guard carbonMods != 0, !isModifierKeyCode(event.keyCode) else {
