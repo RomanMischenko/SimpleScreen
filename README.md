@@ -1,117 +1,134 @@
 # SimpleScreen
 
-A macOS status bar screenshot app. Personal-use project — not intended for distribution.
+Скриншотер macOS, живущий в строке меню. Личный пет-проект — не предназначен для дистрибуции.
 
-## Codebase Overview
+## Зачем
 
-**Entry point**
-- `SimpleScreenApp.swift` — `@main` SwiftUI App, wires `AppDelegate`, suppresses Dock via `.accessory` policy
-- `AppDelegate.swift` — bootstraps all services, checks screen recording permission on launch, polls for grant
+Стандартные хоткеи скриншотов в macOS (`⌘⇧3` / `⌘⇧4`) умеют либо записать PNG на рабочий стол, либо (с зажатым `Ctrl`) положить изображение в буфер обмена. **Одновременно сделать и то и другое — нельзя**: приходится либо лезть в Finder за файлом после копирования, либо вручную копировать сохранённый PNG, чтобы вставить его в чат/таск-трекер.
 
-**Core services**
-- `Preferences/AppSettings.swift` — `@Observable` single source of truth for all user settings; reads/writes `UserDefaults` using `ss_`-prefixed keys
-- `HotKeys/HotKeyManager.swift` — wraps Carbon `RegisterEventHotKey`; manages Cmd+Shift+3 (full screen) and Cmd+Shift+4 (area select)
-- `Notifications/NotificationManager.swift` — wraps `UNUserNotificationCenter`; fires banners after each capture
+SimpleScreen решает именно эту задачу: режим **Save & Copy** (включён по умолчанию) одним хоткеем кладёт скриншот и в указанную папку, и в буфер обмена.
 
-**Capture**
-- `Capture/CaptureEngine.swift` — `@Observable`; uses `SCScreenshotManager` (ScreenCaptureKit) for both full-screen and region captures; dispatches to save-to-file, copy-to-clipboard, or both per `AppSettings.postCaptureAction`; falls back to Desktop if save fails
-- `Capture/AreaSelectionWindow.swift` — borderless `NSWindow` at `.screenSaver` level covering the primary display; `SelectionView` handles drag-to-select with live pixel dimensions, Escape to cancel, and a 10×10 minimum size guard
+Дополнительно:
+
+- настраиваемая папка сохранения;
+- переопределяемые шорткаты с детекцией конфликтов с системными;
+- автозапуск при логине через `SMAppService`;
+- нет иконки в Dock — приложение живёт исключительно в строке меню.
+
+## Обзор кода
+
+**Точка входа**
+
+- `SimpleScreenApp.swift` — `@main` SwiftUI App, подключает `AppDelegate`, скрывает Dock-иконку через `.accessory` activation policy.
+- `AppDelegate.swift` — поднимает все сервисы, на старте проверяет разрешение Screen Recording, опрашивает систему на предмет его выдачи.
+
+**Сервисы**
+
+- `Preferences/AppSettings.swift` — `@Observable` единый источник истины для всех пользовательских настроек; читает/пишет `UserDefaults` по ключам с префиксом `ss_`.
+- `HotKeys/HotKeyManager.swift` — обёртка над Carbon `RegisterEventHotKey`; держит ⌘⇧3 (полный экран) и ⌘⇧4 (область).
+- `Notifications/NotificationManager.swift` — обёртка над `UNUserNotificationCenter`; показывает баннеры после каждого захвата.
+
+**Захват**
+
+- `Capture/CaptureEngine.swift` — `@Observable`; через `SCScreenshotManager` (ScreenCaptureKit) делает и полноэкранный, и региональный захват; в зависимости от `AppSettings.postCaptureAction` сохраняет в файл, кладёт в буфер обмена или делает и то, и другое; при ошибке записи в основную папку откатывается на `~/Desktop`.
+- `Capture/AreaSelectionWindow.swift` — borderless `NSWindow` на уровне `.screenSaver` поверх основного дисплея; `SelectionView` обрабатывает выделение мышью с живым показом размеров в пикселях, отмену по Escape и гард на минимальный размер 10×10 пикселей.
 
 **UI**
-- `Menu/StatusBarController.swift` — owns the `NSStatusItem` (camera icon); builds and owns the dropdown menu; reactively updates key equivalents via `withObservationTracking`
-- `Preferences/PreferencesView.swift` — SwiftUI `Form` hosted in a floating `NSPanel`; configures post-capture action, save folder, keyboard shortcuts (with conflict detection), and launch-at-login
 
-**Data flow**: `AppSettings` → observed by `CaptureEngine`, `StatusBarController`, and `PreferencesView`. All capture goes through `CaptureEngine`. All hotkeys go through `HotKeyManager`. All notifications go through `NotificationManager`. Nothing else touches `UserDefaults` or `SCScreenshotManager` directly.
+- `Menu/StatusBarController.swift` — владеет `NSStatusItem` (иконка камеры); собирает и держит выпадающее меню; реактивно обновляет key equivalents через `withObservationTracking`.
+- `Preferences/PreferencesView.swift` — SwiftUI `Form` внутри плавающего `NSPanel`; настраивает post-capture action, папку сохранения, шорткаты (с детекцией конфликтов) и автозапуск.
 
-## Requirements
+**Поток данных**: `AppSettings` → за ним наблюдают `CaptureEngine`, `StatusBarController`, `PreferencesView`. Весь захват идёт через `CaptureEngine`. Все хоткеи — через `HotKeyManager`. Все нотификации — через `NotificationManager`. Никакой другой код не трогает ни `UserDefaults`, ни `SCScreenshotManager` напрямую.
+
+## Требования
 
 - Xcode 16+
 - macOS 15.6+
-- Apple Developer account (for signing; local builds can use Personal Team)
+- Apple Developer аккаунт (для подписи; для локальной сборки достаточно Personal Team).
 
-## Build & Run
+## Сборка и запуск
 
-1. Open `SimpleScreen.xcodeproj` in Xcode
-2. Select the `SimpleScreen` scheme and your Mac as the run destination
-3. Press **⌘R**
+1. Открыть `SimpleScreen.xcodeproj` в Xcode.
+2. Выбрать схему `SimpleScreen` и Mac в качестве run destination.
+3. Нажать **⌘R**.
 
-The app appears in the macOS status bar (camera icon). No Dock icon appears.
+После запуска приложение появляется в строке меню (иконка камеры). Dock-иконки нет.
 
-### First-run permissions
+### Разрешения при первом запуске
 
-On first launch the app checks for Screen Recording permission:
+На первом старте приложение проверяет наличие разрешения Screen Recording:
 
-- If already granted, the app is ready immediately.
-- If not granted, an alert appears with an **Open System Settings** button. Grant access under **System Settings → Privacy & Security → Screen Recording**.
-- The app polls every second — capture is re-enabled automatically once permission is granted, no relaunch needed.
+- если оно уже выдано — приложение сразу готово к работе;
+- если нет — показывается алерт с кнопкой **Open System Settings**. Выдать доступ нужно в **System Settings → Privacy & Security → Screen Recording**.
+- приложение опрашивает систему раз в секунду — захват включится автоматически, как только разрешение появится, перезапуск не нужен.
 
-## Usage
+## Использование
 
-### Capturing
+### Захват
 
-| Action | Menu item | Default shortcut |
-|--------|-----------|-----------------|
-| Capture full screen | Camera icon → Capture Full Screen | **⌘⇧3** |
-| Capture selected area | Camera icon → Capture Selected Area | **⌘⇧4** |
+| Действие | Пункт меню | Шорткат по умолчанию |
+|----------|------------|----------------------|
+| Захват всего экрана | Иконка камеры → Capture Full Screen | **⌘⇧3** |
+| Захват выделенной области | Иконка камеры → Capture Selected Area | **⌘⇧4** |
 
-**Area select**: a crosshair overlay appears over the primary display. Drag to draw a rectangle — live pixel dimensions are shown next to the cursor. Release to capture. Press **Escape** to cancel. Selections smaller than 10×10 px are rejected with an alert.
+**Выделение области**: поверх основного дисплея появляется crosshair-оверлей. Мышью растягивается прямоугольник, рядом с курсором в реальном времени показываются размеры в пикселях. По отпусканию кнопки — захват. **Escape** — отмена. Выделения меньше 10×10 пикселей отклоняются с предупреждающим баннером.
 
-A second capture triggered while one is already in progress is silently ignored.
+Если второй захват запущен в момент, когда уже идёт первый, он молча игнорируется.
 
-### Post-capture actions
+### Что происходит после захвата
 
-Configured in Preferences. Three modes:
+Настраивается в Preferences. Три режима:
 
-| Mode | Effect |
-|------|--------|
-| Save to File | PNG written to the configured save folder |
-| Copy to Clipboard | Image placed on the clipboard |
-| Save & Copy (default) | Both of the above |
+| Режим | Что делает |
+|-------|------------|
+| Save to File | PNG записывается в указанную папку |
+| Copy to Clipboard | Изображение кладётся в буфер обмена |
+| Save & Copy (по умолчанию) | Делает и то и другое |
 
-A notification banner confirms the result after every capture. Files are named `Screenshot YYYY-MM-DD at HH.MM.SS.png`. If the save folder is unavailable the app falls back to `~/Desktop` and shows an alert.
+После каждого захвата показывается баннер-нотификация с результатом. Файлы именуются по шаблону `Screenshot YYYY-MM-DD at HH.MM.SS.png`. Если основная папка недоступна, приложение откатывается на `~/Desktop` и показывает алерт.
 
 ### Preferences
 
-Open via **Camera icon → Preferences…**
+Открываются через **Иконка камеры → Preferences…**
 
-- **Post-Capture Action** — choose Save, Copy, or both
-- **Save Location** — click **Choose…** to pick any folder; defaults to `~/Pictures/Screenshot/`
-- **Keyboard Shortcuts** — click **Record** next to Full Screen or Area Select, then press your desired shortcut; conflicts with system shortcuts are detected and reported inline
-- **Launch at Login** — toggle to register/unregister the app with `SMAppService`
+- **Post-Capture Action** — выбор Save, Copy или обоих сразу.
+- **Save Location** — кнопка **Choose…** позволяет указать любую папку; по умолчанию `~/Pictures/Screenshot/`.
+- **Keyboard Shortcuts** — кнопка **Record** рядом с Full Screen или Area Select; нажимаете нужный шорткат; конфликты с системными комбинациями детектируются и показываются прямо в окне.
+- **Launch at Login** — переключатель, регистрирующий/снимающий приложение в `SMAppService`.
 
-All settings persist across restarts.
+Все настройки сохраняются между запусками.
 
-## Logs
+## Логи
 
-SimpleScreen writes diagnostics through macOS unified logging (`os.Logger`) — no files are created in `/tmp` or your home directory. macOS rotates and ages out the log automatically.
+SimpleScreen пишет диагностику через macOS unified logging (`os.Logger`) — никаких файлов в `/tmp` или домашней директории не создаётся. macOS сам ротирует и устаревает журнал.
 
-**Where to look**
+**Где смотреть**
 
-- **Console.app**: open it, then type `subsystem:com.simplescreenapp.SimpleScreen` in the search field.
-- **Terminal**: `log show --predicate 'subsystem == "com.simplescreenapp.SimpleScreen"' --debug --last 1h`
+- **Console.app**: открыть и ввести в поиске `subsystem:com.simplescreenapp.SimpleScreen`.
+- **Терминал**: `log show --predicate 'subsystem == "com.simplescreenapp.SimpleScreen"' --debug --last 1h`
 
-**What's logged**
+**Что логируется**
 
-- Category `capture` — screen-capture events: save folder, image dimensions, successful file/clipboard writes, and failures.
-- Category `areaSelect` — area-selection window events: open/close, mouse drag, Escape cancellation, selection-too-small.
+- Категория `capture` — события захвата: папка сохранения, размеры изображения, успешные записи в файл/буфер, ошибки.
+- Категория `areaSelect` — события окна выделения: открытие/закрытие, перемещение мыши, отмена по Escape, слишком маленькое выделение.
 
-**Levels**
+**Уровни**
 
-By default macOS shows `info` and `error` entries only. For verbose diagnostics, pass `--debug` to `log show` or enable **Action → Include Debug Messages** in Console.app.
+По умолчанию macOS показывает только `info` и `error`. Для подробной диагностики — флаг `--debug` для `log show` или **Action → Include Debug Messages** в Console.app.
 
-## Distribution (Notarization)
+## Дистрибуция
 
-SimpleScreen is built for personal use only — there is no notarized release pipeline. Install the locally-built `.app` directly:
+SimpleScreen собран под личное использование — нотаризованного релиз-пайплайна нет. Установка идёт напрямую из локально собранного `.app`:
 
-1. Build Release in Xcode (**Product → Build** with the Release scheme, or `xcodebuild -project SimpleScreen.xcodeproj -scheme SimpleScreen -configuration Release build`).
-2. Drag `SimpleScreen.app` from `DerivedData/.../Build/Products/Release/` into `/Applications` (or `~/Applications`).
-3. First launch: Gatekeeper may complain because the build uses ad-hoc local signing (`Sign to Run Locally`). Right-click the app → **Open** → confirm **Open** in the dialog. One time only.
-4. Grant **Screen Recording** permission when prompted (System Settings → Privacy & Security → Screen Recording).
+1. Собрать Release в Xcode (**Product → Build** в Release-схеме, либо `xcodebuild -project SimpleScreen.xcodeproj -scheme SimpleScreen -configuration Release build`).
+2. Перетащить `SimpleScreen.app` из `DerivedData/.../Build/Products/Release/` в `/Applications` (или `~/Applications`).
+3. На первом запуске Gatekeeper может ругнуться: сборка использует ad-hoc локальную подпись (`Sign to Run Locally`). Правый клик → **Open** → подтвердить **Open** в диалоге. Один раз.
+4. Выдать разрешение **Screen Recording** (System Settings → Privacy & Security → Screen Recording).
 
-Caveats of local signing:
+Особенности локальной подписи:
 
-- **Launch at Login** via `SMAppService` may silently or noisily fail for ad-hoc-signed builds — a notification banner will surface the error if it happens.
-- The local signature is tied to the current ad-hoc identity on this machine. After a major macOS update or identity reset, the app may need to be rebuilt.
-- Do **not** ship `SimpleScreen.app.dSYM` with the `.app` — it's a debug-symbols bundle Xcode produces next to the binary (for crash symbolication), not for end users. Safe to delete locally; it regenerates on rebuild.
+- **Launch at Login** через `SMAppService` для ad-hoc сборок может молча или громко не сработать — если так — баннер с ошибкой это покажет.
+- Локальная подпись привязана к текущей ad-hoc identity на этой машине. После крупного апдейта macOS или сброса identity приложение, возможно, придётся пересобрать.
+- **Не копировать** `SimpleScreen.app.dSYM` рядом с `.app` — это бандл с дебаг-символами, который Xcode кладёт рядом с бинарником (для символикации крэшей), а не часть приложения для пользователя. Локально можно безопасно удалять, он пересоздастся при следующей сборке.
 
-If this project ever needs to be distributed to other machines, switch to the full Developer ID flow: Archive → Developer ID sign → notarize (`xcrun notarytool`) → staple (`xcrun stapler staple`) → `ditto -c -k --keepParent SimpleScreen.app SimpleScreen.zip`.
+Если когда-нибудь понадобится распространять проект на другие машины — переключаться на полный Developer ID-флоу: Archive → Developer ID sign → notarize (`xcrun notarytool`) → staple (`xcrun stapler staple`) → `ditto -c -k --keepParent SimpleScreen.app SimpleScreen.zip`.
