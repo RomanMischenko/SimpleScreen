@@ -81,6 +81,24 @@ Open via **Camera icon → Preferences…**
 
 All settings persist across restarts.
 
+## Logs
+
+SimpleScreen writes diagnostics through macOS unified logging (`os.Logger`) — no files are created in `/tmp` or your home directory. macOS rotates and ages out the log automatically.
+
+**Where to look**
+
+- **Console.app**: open it, then type `subsystem:com.simplescreenapp.SimpleScreen` in the search field.
+- **Terminal**: `log show --predicate 'subsystem == "com.simplescreenapp.SimpleScreen"' --debug --last 1h`
+
+**What's logged**
+
+- Category `capture` — screen-capture events: save folder, image dimensions, successful file/clipboard writes, and failures.
+- Category `areaSelect` — area-selection window events: open/close, mouse drag, Escape cancellation, selection-too-small.
+
+**Levels**
+
+By default macOS shows `info` and `error` entries only. For verbose diagnostics, pass `--debug` to `log show` or enable **Action → Include Debug Messages** in Console.app.
+
 ## Distribution (Notarization)
 
 1. Archive in Xcode: **Product → Archive**

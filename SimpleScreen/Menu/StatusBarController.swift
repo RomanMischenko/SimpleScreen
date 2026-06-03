@@ -3,26 +3,40 @@ import Carbon
 import Observation
 import SwiftUI
 
-final class StatusBarController {
+final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private(set) var captureFullScreenItem: NSMenuItem
     private(set) var captureAreaItem: NSMenuItem
     let settings: AppSettings
     private let captureEngine: CaptureEngine
     private let hotKeyManager: HotKeyManager
-    private var areaSelectionWindow: AreaSelectionWindow?
+    private let notificationManager: NotificationManager
+    private let onMenuWillOpen: () -> Void
+    private var cropWindow: CropWindow?
     private var preferencesPanel: NSPanel?
+    private(set) var fullScreenConflict = false
+    private(set) var areaSelectConflict = false
 
-    init(settings: AppSettings, captureEngine: CaptureEngine, hotKeyManager: HotKeyManager) {
+    init(
+        settings: AppSettings,
+        captureEngine: CaptureEngine,
+        hotKeyManager: HotKeyManager,
+        notificationManager: NotificationManager,
+        onMenuWillOpen: @escaping () -> Void
+    ) {
         self.settings = settings
         self.captureEngine = captureEngine
         self.hotKeyManager = hotKeyManager
+        self.notificationManager = notificationManager
+        self.onMenuWillOpen = onMenuWillOpen
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "SimpleScreen")
 
         captureFullScreenItem = NSMenuItem(title: "Capture Full Screen", action: nil, keyEquivalent: "")
         captureAreaItem = NSMenuItem(title: "Capture Selected Area", action: nil, keyEquivalent: "")
+
+        super.init()
 
         let menu = NSMenu()
         menu.addItem(captureFullScreenItem)
@@ -36,6 +50,7 @@ final class StatusBarController {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+        menu.delegate = self
 
         captureFullScreenItem.target = self
         captureFullScreenItem.action = #selector(triggerFullScreenCapture)
@@ -50,12 +65,16 @@ final class StatusBarController {
         observeKeyEquivalents()
     }
 
+    func menuWillOpen(_ menu: NSMenu) {
+        onMenuWillOpen()
+    }
+
     @objc private func triggerFullScreenCapture() {
         Task { await captureEngine.captureFullScreen() }
     }
 
     @objc private func triggerAreaCapture() {
-        showAreaSelectionWindow()
+        Task { await showAreaSelectionWindow() }
     }
 
     @objc func openPreferences() {
@@ -63,11 +82,19 @@ final class StatusBarController {
             let view = PreferencesView(
                 settings: settings,
                 hotKeyManager: hotKeyManager,
+                initialFullScreenConflict: fullScreenConflict,
+                initialAreaSelectConflict: areaSelectConflict,
                 fullScreenCallback: { [weak self] in
                     Task { await self?.captureEngine.captureFullScreen() }
                 },
                 areaSelectCallback: { [weak self] in
-                    self?.showAreaSelectionWindow()
+                    Task { await self?.showAreaSelectionWindow() }
+                },
+                onResolveConflict: { [weak self] mode in
+                    switch mode {
+                    case .fullScreen: self?.markConflict(fullScreen: false)
+                    case .areaSelect: self?.markConflict(areaSelect: false)
+                    }
                 },
                 onDone: { [weak self] in
                     self?.preferencesPanel?.orderOut(nil)
@@ -93,29 +120,47 @@ final class StatusBarController {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func showAreaSelectionWindow() {
-        if let existing = areaSelectionWindow {
-            existing.close()
-            areaSelectionWindow = nil
-        }
-        let window = AreaSelectionWindow()
-        areaSelectionWindow = window
-        window.completion = { [weak self] rect in
-            // Defer nil-out to next run loop so the current event's autorelease
-            // pool fully drains before the window/view are released.
-            DispatchQueue.main.async {
-                self?.areaSelectionWindow = nil
+    func showAreaSelectionWindow() async {
+        guard let fullImage = await captureEngine.captureDisplayImage() else { return }
+
+        await MainActor.run {
+            if let existing = cropWindow {
+                existing.close()
+                cropWindow = nil
             }
-            guard let rect else { return }
-            Task { await self?.captureEngine.captureArea(rect: rect) }
+            let window = CropWindow(image: fullImage, onSelectionTooSmall: { [weak self] in
+                self?.notificationManager.postSelectionTooSmallNotification()
+            })
+            cropWindow = window
+            window.cropCompletion = { [weak self] rect in
+                DispatchQueue.main.async {
+                    self?.cropWindow = nil
+                }
+                guard let self, let rect else { return }
+                let scaleFactor = CaptureEngine.backingScaleFactor(for: CGMainDisplayID())
+                let imageHeightPx = CGFloat(fullImage.height)
+                let pixelRect = CGRect(
+                    x: rect.origin.x * scaleFactor,
+                    y: imageHeightPx - (rect.origin.y + rect.height) * scaleFactor,
+                    width: rect.width * scaleFactor,
+                    height: rect.height * scaleFactor
+                )
+                guard let cropped = CaptureEngine.cropImage(fullImage, to: pixelRect) else { return }
+                self.captureEngine.handleAreaCapture(cropped)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
         }
-        // Do NOT call NSApp.activate — on macOS 26 it triggers extra window-management
-        // releases that over-release the overlay window and cause EXC_BAD_ACCESS.
-        // canBecomeKey=true on AreaSelectionWindow ensures keyboard events still work.
-        window.makeKeyAndOrderFront(nil)
     }
 
     func updateAreaSelectKeyEquivalent() {
+        if areaSelectConflict {
+            captureAreaItem.title = "Capture Selected Area (in use by system)"
+            captureAreaItem.keyEquivalent = ""
+            captureAreaItem.keyEquivalentModifierMask = []
+            return
+        }
+        captureAreaItem.title = "Capture Selected Area"
         if let shortcut = settings.areaSelectShortcut {
             captureAreaItem.keyEquivalent = keyEquivalentString(for: shortcut.keyCode)
             captureAreaItem.keyEquivalentModifierMask = nsModifierFlags(from: shortcut.modifierFlags)
@@ -126,6 +171,13 @@ final class StatusBarController {
     }
 
     func updateFullScreenKeyEquivalent() {
+        if fullScreenConflict {
+            captureFullScreenItem.title = "Capture Full Screen (in use by system)"
+            captureFullScreenItem.keyEquivalent = ""
+            captureFullScreenItem.keyEquivalentModifierMask = []
+            return
+        }
+        captureFullScreenItem.title = "Capture Full Screen"
         if let shortcut = settings.fullScreenShortcut {
             captureFullScreenItem.keyEquivalent = keyEquivalentString(for: shortcut.keyCode)
             captureFullScreenItem.keyEquivalentModifierMask = nsModifierFlags(from: shortcut.modifierFlags)
@@ -133,6 +185,13 @@ final class StatusBarController {
             captureFullScreenItem.keyEquivalent = ""
             captureFullScreenItem.keyEquivalentModifierMask = []
         }
+    }
+
+    func markConflict(fullScreen: Bool? = nil, areaSelect: Bool? = nil) {
+        if let fullScreen { fullScreenConflict = fullScreen }
+        if let areaSelect { areaSelectConflict = areaSelect }
+        updateFullScreenKeyEquivalent()
+        updateAreaSelectKeyEquivalent()
     }
 
     private func observeKeyEquivalents() {

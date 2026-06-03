@@ -8,8 +8,16 @@
 
 ## Architecture
 
-- Single-target macOS app. All source is under `SimpleScreen/`.
-- `@main` entry: `SimpleScreenApp.swift` → `AppDelegate` bootstraps all services in `applicationDidFinishLaunching`.
+- Single-target macOS app. All source is under `SimpleScreen/`, grouped by responsibility:
+  - `SimpleScreenApp.swift` — `@main` entry; sets `.accessory` activation policy (no Dock icon).
+  - `AppDelegate.swift` — bootstraps all services in `applicationDidFinishLaunching`.
+  - `Capture/CaptureEngine.swift` — `@Observable`; wraps `SCScreenshotManager`; save-to-file, copy-to-clipboard, or both.
+  - `Capture/AreaSelectionWindow.swift` — `CropWindow` (`NSWindow` at `.floating`) showing a captured full-screen image for drag-to-crop.
+  - `HotKeys/HotKeyManager.swift` — Carbon `RegisterEventHotKey` (default Cmd+Shift+3 = full, Cmd+Shift+4 = area).
+  - `Menu/StatusBarController.swift` — owns `NSStatusItem` and menu; reactively updates key equivalents; performs the crop.
+  - `Notifications/NotificationManager.swift` — `UNUserNotificationCenter` banners post-capture.
+  - `Preferences/AppSettings.swift` — `@Observable` single source of truth; all `UserDefaults` keys are `ss_`-prefixed.
+  - `Preferences/PreferencesView.swift` — SwiftUI `Form` in a floating `NSPanel`.
 - **Data flow**: `AppSettings` (single `@Observable` truth) → observed by `CaptureEngine`, `StatusBarController`, `PreferencesView`. No other file touches `UserDefaults` or `SCScreenshotManager` directly.
 - Hotkeys use Carbon `RegisterEventHotKey` (not NSEvent global monitors). Hotkey IDs: `1` = full screen, `2` = area select. Signature: `0x5353_4353`.
 
@@ -17,11 +25,18 @@
 
 - **App is sandbox-disabled** (`com.apple.security.app-sandbox = false` in entitlements). It accesses `UserDefaults`, filesystem, `SMAppService` — do not enable sandbox without rewriting persistence and launch-at-login.
 - **Dock-hidden**: `NSApp.setActivationPolicy(.accessory)` + `LSUIElement = true` in Info.plist. No Dock icon.
-- **Area selection overlay** is a borderless `NSPanel` at `.screenSaver` level. `isReleasedWhenClosed = false` is critical — AppKit over-releases it otherwise. Do not call `NSApp.activate` before showing the overlay (causes `EXC_BAD_ACCESS` on macOS 26).
-- **Coordinate flip**: `CaptureEngine.captureArea(rect:)` flips the y-axis from AppKit (bottom-left) to ScreenCaptureKit (top-left) when building `sourceRect`.
-- **150 ms sleep** before area capture — lets the selection overlay clear from the compositor.
+- **Area selection**: captures the full screen first via `SCScreenshotManager.captureImage`, then presents the image in a borderless `NSWindow` at `.floating` level for drag-to-crop. No compositor delay or coordinate conversion needed.
 - **Capture guard**: `isCapturing` flag silently drops a second capture if one is already in progress.
+- **Retina capture**: `SCDisplay.width/height` are in logical points. `SCStreamConfiguration.width/height` must be multiplied by `NSScreen.backingScaleFactor` to get a native-resolution capture; otherwise the image is half-res. `StatusBarController` then converts the points-based selection rect to pixels with the same scale factor before `CGImage.cropping(to:)`.
+- **`CropWindow.isReleasedWhenClosed = false`**: required. `StatusBarController` keeps a strong reference in `cropWindow` and nils it after `cropCompletion`. With the default `true`, `close()` releases the window, then the later `cropWindow = nil` over-releases and crashes in `objc_release`.
 - **UserDefaults keys** are `ss_`-prefixed (e.g. `ss_postCaptureAction`, `ss_saveLocationPath`).
+- **TCC string**: `Info.plist` declares `NSScreenCaptureUsageDescription`. Required — without it the app cannot obtain Screen Recording permission and capture silently fails.
+- **Notification identifiers are unique by design (NOT a bug)**: every `UNNotificationRequest` in `NotificationManager` uses a per-call `UUID` (`ss.capture.<uuid>`, `ss.capture.fallback.<uuid>`, `ss.capture.save-failed.<uuid>`, `ss.area.too-small.<uuid>`). This is intentional — reusing a single fixed identifier would make each new banner **replace** the previous one. Repeated events (save failures, Desktop fallbacks, too-small selections, successive captures) must stack as separate Notification Center entries, not silently overwrite each other. Do not "fix" this by collapsing to one shared id. The hotkey-conflict banner is the deliberate exception: it uses the fixed id `ss.hotkey.conflict` because only the latest conflict state matters.
+- **Area selection has a 10×10-point minimum (NOT a bug)**: `CropView.mouseUp` (`Capture/AreaSelectionWindow.swift:150`) rejects any drag smaller than 10×10 points, calls `selectionCompletion?(nil)` and posts a non-blocking "too small" banner via `NotificationManager.postSelectionTooSmallNotification`. This guards against a stray click without drag producing a garbage 1×1-pixel screenshot. Cancellation is also available via Escape (`CropView.keyDown`, `Capture/AreaSelectionWindow.swift:162-169`). Do not "fix" this by lowering the threshold or removing the guard.
+- **`observeKeyEquivalents` re-tracking is intentional (NOT a bug)**: `StatusBarController.observeKeyEquivalents` (`Menu/StatusBarController.swift:197-209`) uses `withObservationTracking { ... } onChange: { DispatchQueue.main.async { ...; re-install } }`. The recursion is the standard way to keep observing via the one-shot Observation API; the `DispatchQueue.main.async` hop is needed because `onChange` is not guaranteed to fire on MainActor. All mutations and re-tracking run on main, no race. Do not "fix" this by switching to another observation primitive or removing the re-install.
+- **`CropView` full-image redraw on `mouseDragged` is intentional (NOT a bug)**: `CropView.mouseDragged` (`Capture/AreaSelectionWindow.swift:143-146`) calls `setNeedsDisplay(bounds)`, which repaints the full retina screenshot every frame. Acceptable — performance during area selection is not a project priority. Do not "optimize" with damaged-rect tracking unless there is a concrete reliability or 24/7 reason.
+- **Single-display capture by design (NOT a bug)**: `CaptureEngine.captureFullScreen` and area selection target only `CGMainDisplayID` / `NSScreen.main` (`Capture/CaptureEngine.swift:31`, `Capture/AreaSelectionWindow.swift:22`). Multi-monitor support is a feature request, not a bug — do not add secondary-display fallbacks during unrelated work.
+- **No `applicationWillTerminate` by design (NOT a bug)**: `AppDelegate` intentionally omits `applicationWillTerminate(_:)`. Carbon hot-keys and the event handler are released by the OS on process exit; `UserDefaults` writes are synchronous; no background work needs draining. Adding an empty stub would be dead code. If future work introduces resources that need explicit flushing (e.g. an in-memory queue, an open file handle), add the hook then — not preemptively.
 
 ## Frameworks
 
@@ -29,7 +44,13 @@ Carbon, ScreenCaptureKit, ServiceManagement, UserNotifications. No third-party d
 
 ## Runtime Debug Log
 
-`CaptureEngine` and `AreaSelectionWindow` write to `/tmp/simplescreenlog.txt`. Not conditional — always on.
+Logging via `os.Logger`, subsystem `com.simplescreenapp.SimpleScreen`. Categories: `capture` (`CaptureEngine`), `areaSelect` (`AreaSelectionWindow`), `hotkeys` (`HotKeyManager`), `launchAtLogin` (`AppSettings`).
+
+- `.debug` — diagnostics (not persisted by default): `saveDir`, `imageSize`, window `init`/`deinit`, `mouseDown`/`mouseUp`, `rep bitsPerPixel`, `png data size`.
+- `.info` — successful captures and notable user events: `write OK`, `desktop write OK`, `clipboard write OK`, `selection too small`.
+- `.error` — failures: `createDirectory FAILED`, primary/desktop `write FAILED`, `rep.representation returned nil`.
+
+View via `Console.app` (filter by Subsystem) or terminal: `log show --predicate 'subsystem == "com.simplescreenapp.SimpleScreen"' --debug --last 1h`. The old `/tmp/simplescreenlog.txt` file is no longer used; rotation is handled by macOS unified logging.
 
 ## Distribution
 

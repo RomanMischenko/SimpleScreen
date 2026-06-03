@@ -1,5 +1,8 @@
 import Foundation
+import os
 import ServiceManagement
+
+private let log = Logger(subsystem: "com.simplescreenapp.SimpleScreen", category: "launchAtLogin")
 
 enum PostCaptureAction: String {
     case saveToFile = "saveToFile"
@@ -56,14 +59,28 @@ struct KeyboardShortcut {
 
     var launchAtLogin: Bool {
         didSet {
+            guard !isRevertingLaunchAtLogin else { return }
             UserDefaults.standard.set(launchAtLogin, forKey: "ss_launchAtLogin")
-            if launchAtLogin {
-                try? SMAppService.mainApp.register()
-            } else {
-                try? SMAppService.mainApp.unregister()
+            do {
+                if launchAtLogin {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
+            } catch {
+                let attempted = launchAtLogin
+                log.error("SMAppService \(attempted ? "register" : "unregister") failed: \(error.localizedDescription, privacy: .public)")
+                isRevertingLaunchAtLogin = true
+                launchAtLogin = oldValue
+                UserDefaults.standard.set(launchAtLogin, forKey: "ss_launchAtLogin")
+                isRevertingLaunchAtLogin = false
+                onLaunchAtLoginRegistrationFailed?(attempted, error)
             }
         }
     }
+
+    var onLaunchAtLoginRegistrationFailed: ((Bool, Error) -> Void)?
+    private var isRevertingLaunchAtLogin = false
 
     init() {
         let defaults = UserDefaults.standard

@@ -1,105 +1,81 @@
 import AppKit
 import Carbon
+import os
 
-private func aswLog(_ message: String) {
-    let logURL = URL(fileURLWithPath: "/tmp/simplescreenlog.txt")
-    let line = "\(Date()): [AreaSelectionWindow] \(message)\n"
-    guard let data = line.data(using: .utf8) else { return }
-    if FileManager.default.fileExists(atPath: logURL.path),
-       let handle = try? FileHandle(forWritingTo: logURL) {
-        handle.seekToEndOfFile()
-        handle.write(data)
-        try? handle.close()
-    } else {
-        try? data.write(to: logURL)
-    }
-}
+private let log = Logger(subsystem: "com.simplescreenapp.SimpleScreen", category: "areaSelect")
 
-final class AreaSelectionWindow: NSPanel {
-    var completion: ((CGRect?) -> Void)?
+final class CropWindow: NSWindow {
+    var cropCompletion: ((CGRect?) -> Void)?
 
-    init() {
+    init(image: CGImage, onSelectionTooSmall: (() -> Void)? = nil) {
         let screen = NSScreen.main ?? NSScreen.screens[0]
-        aswLog("init — screen.frame=\(screen.frame)")
+        log.debug("init — screen.frame=\(NSStringFromRect(screen.frame), privacy: .public) image=\(image.width)x\(image.height)")
         super.init(
             contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        // Prevent AppKit's extra release in close() (isReleasedWhenClosed=true by default
-        // causes RC to hit 0 before our deferred nil-out runs, making a dangling pointer).
-        isReleasedWhenClosed = false
-        backgroundColor = .clear
-        isOpaque = false
+        backgroundColor = .black
+        isOpaque = true
         hasShadow = false
-        level = .screenSaver
+        isReleasedWhenClosed = false
+        level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        acceptsMouseMovedEvents = true
-        ignoresMouseEvents = false
 
-        let selectionView = SelectionView(frame: screen.frame)
-        contentView = selectionView
-        makeFirstResponder(selectionView)
-        aswLog("init — done, retainCount path OK")
+        let cropView = CropView(frame: screen.frame, image: image)
+        cropView.selectionCompletion = { [weak self] rect in
+            self?.finish(rect)
+        }
+        cropView.tooSmallHandler = onSelectionTooSmall
+        contentView = cropView
+        makeFirstResponder(cropView)
+        log.debug("init — done")
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not implemented")
     }
 
-    deinit {
-        aswLog("deinit")
-    }
-
-    // Borderless windows don't become key by default; override so keyboard events (Escape) work.
     override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 
-    override func becomeKey() {
-        super.becomeKey()
-        NSCursor.crosshair.push()
+    deinit {
+        log.debug("deinit")
     }
 
-    func cancel() {
-        aswLog("cancel")
-        NSCursor.pop()
+    private func finish(_ rect: CGRect?) {
+        log.debug("finish rect=\(String(describing: rect), privacy: .public)")
         close()
-        completion?(nil)
-    }
-
-    fileprivate func completeSelection(_ rect: CGRect) {
-        aswLog("completeSelection rect=\(rect)")
-        NSCursor.pop()
-        close()
-        completion?(rect)
+        cropCompletion?(rect)
     }
 }
 
-private final class SelectionView: NSView {
+private final class CropView: NSView {
+    var selectionCompletion: ((CGRect?) -> Void)?
+    var tooSmallHandler: (() -> Void)?
+
+    private let nsImage: NSImage
     private var startPoint: NSPoint = .zero
     private var currentPoint: NSPoint = .zero
     private var isDragging = false
+
+    init(frame: NSRect, image: CGImage) {
+        nsImage = NSImage(cgImage: image, size: frame.size)
+        super.init(frame: frame)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .cursorUpdate],
-            owner: self,
-            userInfo: nil
-        ))
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        NSCursor.crosshair.set()
-    }
-
     override func draw(_ dirtyRect: NSRect) {
+        nsImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1.0)
+
         NSColor.black.withAlphaComponent(0.3).setFill()
         bounds.fill()
 
@@ -109,8 +85,11 @@ private final class SelectionView: NSView {
         let w = abs(currentPoint.x - startPoint.x)
         let h = abs(currentPoint.y - startPoint.y)
 
-        NSColor.selectedContentBackgroundColor.withAlphaComponent(0.3).setFill()
-        selectionRect.fill()
+        // Redraw the image un-dimmed within the selection area.
+        NSGraphicsContext.current?.saveGraphicsState()
+        selectionRect.clip()
+        nsImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1.0)
+        NSGraphicsContext.current?.restoreGraphicsState()
 
         NSColor.white.setStroke()
         let borderPath = NSBezierPath(rect: selectionRect)
@@ -125,9 +104,11 @@ private final class SelectionView: NSView {
         let attrStr = NSAttributedString(string: labelText, attributes: attrs)
         let labelSize = attrStr.size()
         let padding: CGFloat = 4
+        let labelX = currentPoint.x + 8
+        let labelY = currentPoint.y + 8
         let labelRect = NSRect(
-            x: currentPoint.x + 8,
-            y: currentPoint.y + 8,
+            x: labelX,
+            y: labelY,
             width: labelSize.width + padding * 2,
             height: labelSize.height + padding * 2
         )
@@ -149,7 +130,7 @@ private final class SelectionView: NSView {
         startPoint = convert(event.locationInWindow, from: nil)
         currentPoint = startPoint
         isDragging = true
-        aswLog("mouseDown at \(startPoint)")
+        log.debug("mouseDown at \(NSStringFromPoint(self.startPoint), privacy: .public)")
         setNeedsDisplay(bounds)
     }
 
@@ -161,37 +142,27 @@ private final class SelectionView: NSView {
     override func mouseUp(with event: NSEvent) {
         currentPoint = convert(event.locationInWindow, from: nil)
         isDragging = false
-        aswLog("mouseUp current=\(currentPoint) start=\(startPoint)")
+        log.debug("mouseUp current=\(NSStringFromPoint(self.currentPoint), privacy: .public) start=\(NSStringFromPoint(self.startPoint), privacy: .public)")
 
         let dX = currentPoint.x - startPoint.x
         let dY = currentPoint.y - startPoint.y
 
         guard abs(dX) >= 10, abs(dY) >= 10 else {
-            aswLog("mouseUp — selection too small (\(dX)x\(dY)), cancelling")
-            (window as? AreaSelectionWindow)?.cancel()
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Selection Too Small"
-                alert.informativeText = "The selected area was too small — capture cancelled."
-                alert.runModal()
-            }
+            log.info("mouseUp — selection too small (\(dX)x\(dY)), cancelling")
+            selectionCompletion?(nil)
+            tooSmallHandler?()
             return
         }
 
         let selectionRect = computeSelectionRect()
-        guard let nsWindow = self.window else {
-            aswLog("mouseUp — window is nil, cannot complete")
-            return
-        }
-        let screenRect = nsWindow.convertToScreen(convert(selectionRect, to: nil))
-        aswLog("mouseUp — completing with screenRect=\(screenRect)")
-        (nsWindow as? AreaSelectionWindow)?.completeSelection(screenRect)
+        log.debug("mouseUp — completing with selectionRect=\(NSStringFromRect(selectionRect), privacy: .public)")
+        selectionCompletion?(selectionRect)
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == UInt16(kVK_Escape) {
-            aswLog("keyDown — Escape, cancelling")
-            (window as? AreaSelectionWindow)?.cancel()
+            log.debug("keyDown — Escape, cancelling")
+            selectionCompletion?(nil)
         } else {
             super.keyDown(with: event)
         }

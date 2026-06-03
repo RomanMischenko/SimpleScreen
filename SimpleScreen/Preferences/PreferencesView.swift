@@ -2,7 +2,19 @@ import AppKit
 import Carbon
 import SwiftUI
 
-// Reference type so NSEvent monitor closures can mutate recording state and trigger SwiftUI updates
+// Reference type so NSEvent monitor closures can mutate recording state and trigger SwiftUI updates.
+//
+// Owned by `PreferencesView` as `@State private var rec = ShortcutRecordingState()`.
+// Per Apple's Observation guidance, `@State` with an `@Observable` reference type is the
+// idiomatic pattern for view-owned model state — `@State` storage persists across view
+// struct re-creations, and Observation tracks mutations of the boxed instance.
+//
+// The `eventMonitor: Any?` field stays here because the NSEvent local monitor closure
+// must mutate it from inside itself when the user cancels — reference semantics required.
+//
+// State survives reopening the Preferences window because `StatusBarController.preferencesPanel`
+// caches the `NSPanel` + its `NSHostingView` (see `StatusBarController.swift:80-118`), so the
+// `@State` storage lives for the whole panel lifetime, not per show.
 @Observable
 final class ShortcutRecordingState {
     var isRecordingFullScreen = false
@@ -15,11 +27,15 @@ final class ShortcutRecordingState {
 struct PreferencesView: View {
     @Bindable var settings: AppSettings
     let hotKeyManager: HotKeyManager
+    let initialFullScreenConflict: Bool
+    let initialAreaSelectConflict: Bool
     let fullScreenCallback: () -> Void
     let areaSelectCallback: () -> Void
+    let onResolveConflict: (CaptureMode) -> Void
     let onDone: () -> Void
 
     @State private var rec = ShortcutRecordingState()
+    @State private var didSyncInitialConflicts = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,6 +93,13 @@ struct PreferencesView: View {
             .padding([.horizontal, .bottom])
         }
         .frame(minWidth: 460)
+        .onAppear {
+            if !didSyncInitialConflicts {
+                rec.fullScreenConflict = initialFullScreenConflict
+                rec.areaSelectConflict = initialAreaSelectConflict
+                didSyncInitialConflicts = true
+            }
+        }
         .onDisappear { cancelRecording() }
     }
 
@@ -153,9 +176,20 @@ struct PreferencesView: View {
                 cancelRecording()
                 return nil
             }
+            // Mask off device-dependent bits so only the canonical modifier set reaches
+            // the Carbon translation — protects against spurious matches if NSEvent ever
+            // surfaces device-specific flags in higher bits.
+            let cleanFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let carbonMods = carbonModifiers(from: cleanFlags)
+            // Require at least one modifier and a non-modifier key — reject bare
+            // letters (would hijack the key globally) and modifier-only presses.
+            guard carbonMods != 0, !isModifierKeyCode(event.keyCode) else {
+                NSSound.beep()
+                return nil
+            }
             let newShortcut = KeyboardShortcut(
                 keyCode: UInt32(event.keyCode),
-                modifierFlags: carbonModifiers(from: event.modifierFlags)
+                modifierFlags: carbonMods
             )
             attemptRegister(shortcut: newShortcut, for: mode, rec: recCapture)
             return nil
@@ -167,30 +201,51 @@ struct PreferencesView: View {
         let callback = mode == .fullScreen ? fullScreenCallback : areaSelectCallback
         let oldShortcut = mode == .fullScreen ? settings.fullScreenShortcut : settings.areaSelectShortcut
 
-        hotKeyManager.unregister(id: id)
+        // Re-recording the exact combo that's already live: it's still registered,
+        // nothing to swap. Re-registering would self-conflict via eventHotKeyExistsErr.
+        if let old = oldShortcut, old.keyCode == shortcut.keyCode, old.modifierFlags == shortcut.modifierFlags {
+            finishSuccess(for: mode, shortcut: shortcut, rec: rec)
+            return
+        }
 
+        // Probe the new combo under a throwaway id WITHOUT tearing down the live
+        // hotkey. On conflict the existing registration (or lack of one) is left
+        // exactly as-is — a failed attempt can no longer lose a working hotkey.
+        let probeID: UInt32 = id + 1000
         do {
-            try hotKeyManager.register(shortcut: shortcut, id: id, callback: callback)
-            switch mode {
-            case .fullScreen:
-                settings.fullScreenShortcut = shortcut
-                rec.isRecordingFullScreen = false
-                rec.fullScreenConflict = false
-            case .areaSelect:
-                settings.areaSelectShortcut = shortcut
-                rec.isRecordingAreaSelect = false
-                rec.areaSelectConflict = false
-            }
-            removeMonitor(rec: rec)
+            try hotKeyManager.register(shortcut: shortcut, id: probeID, callback: {})
         } catch HotKeyError.conflict {
-            if let old = oldShortcut {
-                try? hotKeyManager.register(shortcut: old, id: id, callback: callback)
-            }
             switch mode {
             case .fullScreen: rec.fullScreenConflict = true
             case .areaSelect: rec.areaSelectConflict = true
             }
-        } catch {}
+            return
+        } catch {
+            return
+        }
+
+        // Probe succeeded → combo is free. Drop the probe, then atomically swap
+        // the live hotkey to it (real-id registration is guaranteed to succeed).
+        hotKeyManager.unregister(id: probeID)
+        hotKeyManager.unregister(id: id)
+        try? hotKeyManager.register(shortcut: shortcut, id: id, callback: callback)
+
+        finishSuccess(for: mode, shortcut: shortcut, rec: rec)
+    }
+
+    private func finishSuccess(for mode: CaptureMode, shortcut: KeyboardShortcut, rec: ShortcutRecordingState) {
+        switch mode {
+        case .fullScreen:
+            settings.fullScreenShortcut = shortcut
+            rec.isRecordingFullScreen = false
+            rec.fullScreenConflict = false
+        case .areaSelect:
+            settings.areaSelectShortcut = shortcut
+            rec.isRecordingAreaSelect = false
+            rec.areaSelectConflict = false
+        }
+        onResolveConflict(mode)
+        removeMonitor(rec: rec)
     }
 
     private func cancelRecording() {
@@ -206,6 +261,12 @@ struct PreferencesView: View {
             NSEvent.removeMonitor(m)
             rec.eventMonitor = nil
         }
+    }
+
+    // Left/right modifier key codes (Command, Shift, CapsLock, Option, Control,
+    // Function): 0x36...0x3F. A pure modifier press must not become a shortcut.
+    private func isModifierKeyCode(_ keyCode: UInt16) -> Bool {
+        (0x36...0x3F).contains(keyCode)
     }
 
     private func carbonModifiers(from nsFlags: NSEvent.ModifierFlags) -> UInt32 {
