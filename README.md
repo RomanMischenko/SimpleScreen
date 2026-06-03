@@ -1,4 +1,4 @@
-# SimpleScreen
+# <img src="docs/icon.png" width="36" height="36"> SimpleScreen
 
 Скриншотер macOS, живущий в строке меню. Личный пет-проект — не предназначен для дистрибуции.
 
