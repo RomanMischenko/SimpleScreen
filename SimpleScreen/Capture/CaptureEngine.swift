@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 private let log = Logger(subsystem: "com.simplescreenapp.SimpleScreen", category: "capture")
 
-struct Capture {
+struct CaptureResult {
     let mode: CaptureMode
     let timestamp: Date
     let image: CGImage
@@ -47,12 +47,12 @@ struct Capture {
 
     func captureFullScreen() async {
         guard let image = await captureDisplayImage() else { return }
-        let capture = Capture(mode: .fullScreen, timestamp: Date(), image: image)
+        let capture = CaptureResult(mode: .fullScreen, timestamp: Date(), image: image)
         dispatchPostCapture(capture)
     }
 
     func handleAreaCapture(_ image: CGImage) {
-        let capture = Capture(mode: .areaSelect, timestamp: Date(), image: image)
+        let capture = CaptureResult(mode: .areaSelect, timestamp: Date(), image: image)
         dispatchPostCapture(capture)
     }
 
@@ -70,7 +70,7 @@ struct Capture {
         return NSScreen.main?.backingScaleFactor ?? 1.0
     }
 
-    private func dispatchPostCapture(_ capture: Capture) {
+    private func dispatchPostCapture(_ capture: CaptureResult) {
         switch settings.postCaptureAction {
         case .saveToFile:
             if let path = saveImageToDisk(capture) {
@@ -89,7 +89,7 @@ struct Capture {
         }
     }
 
-    private func saveImageToDisk(_ capture: Capture) -> String? {
+    private func saveImageToDisk(_ capture: CaptureResult) -> String? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
@@ -100,20 +100,26 @@ struct Capture {
         log.debug("saveDir = \(saveDir.path, privacy: .public)")
         log.debug("imageSize = \(capture.image.width)x\(capture.image.height), colorSpace = \(colorSpaceName, privacy: .public)")
 
-        do {
-            try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
-            log.debug("createDirectory OK")
-        } catch {
-            log.error("createDirectory FAILED: \(error.localizedDescription, privacy: .public)")
-        }
-
-        let fileURL = nonCollidingURL(for: saveDir.appendingPathComponent(filename))
-        do {
-            try writePNG(capture.image, to: fileURL)
-            log.info("write OK: \(fileURL.path, privacy: .public)")
-            return fileURL.path
-        } catch {
-            log.error("primary write FAILED (\(fileURL.path, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+        var primaryURL: URL?
+        let parentDir = saveDir.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: parentDir.path) {
+            log.error("save dir parent missing, skipping primary: \(parentDir.path, privacy: .public)")
+        } else {
+            do {
+                try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
+                log.debug("createDirectory OK")
+                let fileURL = nonCollidingURL(for: saveDir.appendingPathComponent(filename))
+                primaryURL = fileURL
+                do {
+                    try writePNG(capture.image, to: fileURL)
+                    log.info("write OK: \(fileURL.path, privacy: .public)")
+                    return fileURL.path
+                } catch {
+                    log.error("primary write FAILED (\(fileURL.path, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+                }
+            } catch {
+                log.error("createDirectory FAILED: \(error.localizedDescription, privacy: .public)")
+            }
         }
 
         let desktopURL = nonCollidingURL(for: FileManager.default.homeDirectoryForCurrentUser
@@ -128,7 +134,8 @@ struct Capture {
             log.error("desktop write FAILED (\(desktopURL.path, privacy: .public)): \(error.localizedDescription, privacy: .public)")
         }
 
-        notificationManager.postSaveFailedNotification(primaryPath: fileURL.path)
+        let reportedPath = primaryURL?.path ?? saveDir.appendingPathComponent(filename).path
+        notificationManager.postSaveFailedNotification(primaryPath: reportedPath)
         return nil
     }
 
