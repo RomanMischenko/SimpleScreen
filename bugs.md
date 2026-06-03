@@ -138,10 +138,12 @@
 
 **Status:** исправлено в 63dc511 — `HotKeyManager.setup()` теперь захватывает `OSStatus` от `InstallEventHandler` и при `!= noErr` пишет `.error` через новый `os.Logger` под subsystem `com.simplescreenapp.SimpleScreen`, category `hotkeys` (категория добавлена в `AGENTS.md`).
 
-### [ ] 16. `observeKeyEquivalents` использует `withObservationTracking` через `DispatchQueue.main.async` и рекурсивно переустанавливается
+### [WONTFIX] 16. `observeKeyEquivalents` использует `withObservationTracking` через `DispatchQueue.main.async` и рекурсивно переустанавливается
 **Файл:** `Menu/StatusBarController.swift:145-157`
 
 Это стандартный шаблон для одноразового `withObservationTracking`, но `onChange` в Observation вызывается **не** на MainActor. `DispatchQueue.main.async` решает это, но во время диспатча возможен «дребезг»: несколько изменений до того, как очередь обработается, дают только один re-tracking — это норма, не баг. Замечание скорее на будущее.
+
+**Status:** by design — паттерн `withObservationTracking { ... } onChange: { DispatchQueue.main.async { re-track } }` — стандартный способ продолжать наблюдение через one-shot Observation API; все мутации и re-tracking идут с main, race отсутствует. Сам пункт аудита квалифицирует это как «не баг, замечание на будущее».
 
 ### [x] 17. `NSImage(cgImage: image, size: .zero)` при копировании в буфер
 **Файл:** `Capture/CaptureEngine.swift:155`
@@ -157,15 +159,19 @@
 
 **Status:** исправлено в 7ea11de — `try?` заменён на `do/catch` в `AppSettings.launchAtLogin.didSet`; при ошибке `SMAppService` пишется `.error` через новый `os.Logger` (category `launchAtLogin`), значение откатывается в `oldValue` через guard-флаг `isRevertingLaunchAtLogin` (чтобы SwiftUI-чекбокс отразил реальное состояние и не было рекурсии didSet), и вызывается closure `onLaunchAtLoginRegistrationFailed`. `AppDelegate` подключает closure к новому `NotificationManager.postLaunchAtLoginFailedNotification(enabling:error:)` с UUID-identifier'ом `ss.launch-at-login.failed.<uuid>` (повторные ошибки накапливаются). Категория `launchAtLogin` зарегистрирована в `AGENTS.md`.
 
-### [ ] 19. Carbon-колбэк дёргает словарь без явной синхронизации
+### [x] 19. Carbon-колбэк дёргает словарь без явной синхронизации
 **Файл:** `HotKeys/HotKeyManager.swift:18-24`
 
 Carbon hot-key events приходят на main thread, словари `callbacks` и `hotKeyRefs` тоже модифицируются с main (через UI). Race нет, но это не задокументировано и при попытке когда-нибудь вызвать `register`/`unregister` с фонового потока станет проблемой.
 
-### [ ] 20. `cropView`: рендер каждого кадра перерисовывает весь экран
+**Status:** исправлено в 8517291 — над `final class HotKeyManager` добавлен doc-comment, явно фиксирующий MainActor-инвариант: все entry points (`setup`/`register`/`unregister`) и Carbon C-callback исполняются на main thread (последний — через `GetApplicationEventTarget()` и main run loop), поэтому словари `hotKeyRefs`/`callbacks` не требуют явной синхронизации. Комментарий предупреждает, что любой вызов `register`/`unregister` с фонового потока нарушит контракт — потребуется hop на main или блокировка.
+
+### [WONTFIX] 20. `cropView`: рендер каждого кадра перерисовывает весь экран
 **Файл:** `Capture/AreaSelectionWindow.swift:143-146`
 
 `mouseDragged` → `setNeedsDisplay(bounds)` → перерисовывается весь NSImage с экраном (4K на retina). На высоких разрешениях это ощутимо нагружает CPU/GPU при перетаскивании, но запустить можно — производительность не фокус.
+
+**Status:** by design — производительность вне фокуса аудита (см. преамбулу bugs.md). Полная перерисовка `CropView` при `mouseDragged` допустима и не угрожает надёжности 24/7; UX перетаскивания на retina-дисплеях достаточный.
 
 ### [ ] 21. `Capture` (struct) — слишком общее имя
 **Файл:** `Capture/CaptureEngine.swift:6-10`
@@ -182,20 +188,26 @@ Carbon hot-key events приходят на main thread, словари `callbac
 
 Carbon hot-keys и event handler освобождаются системой на выходе процесса, так что течь они не могут. Но если когда-нибудь добавится корректное завершение фоновых операций — здесь будет нечего вызвать.
 
-### [ ] 24. `PreferencesView` использует `@State private var rec = ShortcutRecordingState()`
+### [x] 24. `PreferencesView` использует `@State private var rec = ShortcutRecordingState()`
 **Файл:** `Preferences/PreferencesView.swift:22`
 
 `ShortcutRecordingState` — reference type с `@Observable`. `@State` для ссылочного типа технически работает (хранит ссылку, поля отслеживаются Observation), но идиоматически правильнее `@State` для value types и держать `@Observable` объект через инициализацию вне view. Сейчас это создаст новый `ShortcutRecordingState` при первой инициализации View — но т.к. PreferencesView пересоздаётся каждый раз через NSHostingView (см. `StatusBarController.openPreferences:62-91`)... на самом деле NSHostingView создаётся один раз и кешируется в `preferencesPanel`, так что состояние сохраняется между показами. Работает, но хрупко.
 
-### [ ] 25. Отсутствует поддержка нескольких мониторов
+**Status:** исправлено в 8517291 — комментарий над `ShortcutRecordingState` расширен: `@State` для `@Observable` reference-типа — идиоматичный SwiftUI Observation паттерн для view-owned стейта (см. Apple «Managing model data in your app»); `eventMonitor: Any?` оправдан семантикой ссылки (мутация из NSEvent-monitor closure); состояние переживает повторные открытия Preferences благодаря кешу `NSHostingView` в `StatusBarController.preferencesPanel`. Поведение кода не менялось.
+
+### [WONTFIX] 25. Отсутствует поддержка нескольких мониторов
 **Файлы:** `Capture/CaptureEngine.swift:31` (фильтр на `CGMainDisplayID`), `Capture/AreaSelectionWindow.swift:22` (`NSScreen.main`)
 
 Захват и окно выбора области всегда работают только с главным дисплеем. Пользователь со вторым монитором не может сделать скриншот того экрана. Это, скорее всего, осознанное решение, но стоит держать в уме.
 
-### [ ] 26. `event.modifierFlags` не маскируются перед сравнением
+**Status:** by design — мульти-монитор это feature request, а не баг. Сам пункт аудита пишет «это, скорее всего, осознанное решение». Захват и выбор области намеренно работают только с `CGMainDisplayID`; расширение на secondary displays — отдельная задача вне scope аудита надёжности.
+
+### [x] 26. `event.modifierFlags` не маскируются перед сравнением
 **Файл:** `Preferences/PreferencesView.swift:158`, `:211-218`
 
 `NSEvent.modifierFlags` содержит device-зависимые биты (NSEvent.ModifierFlags.deviceIndependentFlagsMask). `carbonModifiers(from:)` проверяет конкретные значения (`.command`, `.shift`, и т.д.), что само по себе работает корректно через `contains`, но устойчивее было бы сначала маскировать. Не баг сейчас, но потенциальная ловушка.
+
+**Status:** исправлено в 8517291 — в `startRecording` (`Preferences/PreferencesView.swift`) `event.modifierFlags` теперь маскируется `.deviceIndependentFlagsMask` перед вызовом `carbonModifiers(from:)`, отрезая device-зависимые биты до сравнения. `carbonModifiers(from:)` оставлен без изменений (`contains` уже устойчив), маска применяется в единственной точке входа.
 
 ---
 
