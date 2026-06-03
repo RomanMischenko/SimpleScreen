@@ -1,6 +1,6 @@
 # SimpleScreen
 
-A macOS status bar screenshot app.
+A macOS status bar screenshot app. Personal-use project — not intended for distribution.
 
 ## Codebase Overview
 
@@ -101,7 +101,17 @@ By default macOS shows `info` and `error` entries only. For verbose diagnostics,
 
 ## Distribution (Notarization)
 
-1. Archive in Xcode: **Product → Archive**
-2. Distribute → Developer ID → Notarize
-3. Staple the ticket: `xcrun stapler staple SimpleScreen.app`
-4. Compress for distribution: `ditto -c -k --keepParent SimpleScreen.app SimpleScreen.zip`
+SimpleScreen is built for personal use only — there is no notarized release pipeline. Install the locally-built `.app` directly:
+
+1. Build Release in Xcode (**Product → Build** with the Release scheme, or `xcodebuild -project SimpleScreen.xcodeproj -scheme SimpleScreen -configuration Release build`).
+2. Drag `SimpleScreen.app` from `DerivedData/.../Build/Products/Release/` into `/Applications` (or `~/Applications`).
+3. First launch: Gatekeeper may complain because the build uses ad-hoc local signing (`Sign to Run Locally`). Right-click the app → **Open** → confirm **Open** in the dialog. One time only.
+4. Grant **Screen Recording** permission when prompted (System Settings → Privacy & Security → Screen Recording).
+
+Caveats of local signing:
+
+- **Launch at Login** via `SMAppService` may silently or noisily fail for ad-hoc-signed builds — a notification banner will surface the error if it happens.
+- The local signature is tied to the current ad-hoc identity on this machine. After a major macOS update or identity reset, the app may need to be rebuilt.
+- Do **not** ship `SimpleScreen.app.dSYM` with the `.app` — it's a debug-symbols bundle Xcode produces next to the binary (for crash symbolication), not for end users. Safe to delete locally; it regenerates on rebuild.
+
+If this project ever needs to be distributed to other machines, switch to the full Developer ID flow: Archive → Developer ID sign → notarize (`xcrun notarytool`) → staple (`xcrun stapler staple`) → `ditto -c -k --keepParent SimpleScreen.app SimpleScreen.zip`.

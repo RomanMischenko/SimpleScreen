@@ -54,7 +54,7 @@ View via `Console.app` (filter by Subsystem) or terminal: `log show --predicate 
 
 ## Distribution
 
-Archive in Xcode → Developer ID → Notarize → `xcrun stapler staple` → `ditto -c -k --keepParent` for zip.
+Personal-use project — no notarized release. Install by copying the locally-built `SimpleScreen.app` (Release config) into `/Applications`. First launch needs Gatekeeper bypass via right-click → Open because the build uses `Sign to Run Locally` (ad-hoc signature). `SimpleScreen.app.dSYM` next to the `.app` is debug-symbols only and must not be shipped/copied alongside it. If distribution to other machines is ever needed, switch to the Developer ID flow: Archive → Developer ID sign → notarize (`xcrun notarytool`) → staple → `ditto -c -k --keepParent` zip.
 
 ## Swift Concurrency
 
